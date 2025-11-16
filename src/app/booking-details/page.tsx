@@ -2,7 +2,7 @@
 
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Image from 'next/image'
 
 export default function BookingDetailsPage() {
@@ -17,16 +17,72 @@ export default function BookingDetailsPage() {
   const children = searchParams.get('children') || '0'
   const infants = searchParams.get('infants') || '0'
 
-  const stationCodes: { [key: string]: string } = {
-    'الهفوف': 'ABQ',
-    'الرياض': 'RYD',
-    'الدمام': 'DMM',
-    'القصيم': 'QSM',
-    'حائل': 'HAI'
+  // حالة العرض في الهيدر (من localStorage أو من الquery params كنسخة احتياطية)
+  const [headerFromCode, setHeaderFromCode] = useState('ABQ')
+  const [headerToCode, setHeaderToCode] = useState('RYD')
+  const [headerDateText, setHeaderDateText] = useState('الخميس، 13 نوفمبر 2025')
+  const [headerPassengersText, setHeaderPassengersText] = useState('1 بالغ')
+
+  const arabicMonths = [
+    'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+    'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+  ]
+  const arabicDays = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
+
+  const formatArabicFullDate = (iso: string | null): string => {
+    if (!iso) return 'الخميس، 13 نوفمبر 2025'
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return 'الخميس، 13 نوفمبر 2025'
+    const dayName = arabicDays[d.getDay()]
+    const day = d.getDate()
+    const month = arabicMonths[d.getMonth()]
+    const year = d.getFullYear()
+    return `${dayName}، ${day} ${month} ${year}`
   }
 
-  const fromCode = stationCodes[fromStation] || 'ABQ'
-  const toCode = stationCodes[toStation] || 'RYD'
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem('bookingDraft')
+      if (raw) {
+        const data = JSON.parse(raw) as {
+          fromStationCode?: string
+          toStationCode?: string
+          selectedDateISO?: string
+          passengers?: { summaryAr?: string; adults?: number; children?: number; infants?: number }
+        }
+        if (data.fromStationCode) setHeaderFromCode(data.fromStationCode)
+        if (data.toStationCode) setHeaderToCode(data.toStationCode)
+        if (data.selectedDateISO) setHeaderDateText(formatArabicFullDate(data.selectedDateISO))
+        if (data.passengers?.summaryAr) {
+          setHeaderPassengersText(data.passengers.summaryAr)
+        } else {
+          const a = parseInt(adults); const c = parseInt(children); const i = parseInt(infants)
+          const parts: string[] = []
+          if (a > 0) parts.push(`${a} بالغ`)
+          if (c > 0) parts.push(`${c} طفل`)
+          if (i > 0) parts.push(`${i} رضيع`)
+          setHeaderPassengersText(parts.length ? parts.join(', ') : '1 بالغ')
+        }
+        return
+      }
+    } catch {
+      // تجاهل الأخطاء
+    }
+    // fallback لا توجد بيانات في التخزين: استخدم query params الافتراضية
+    const stationCodes: { [key: string]: string } = {
+      'الهفوف': 'ABQ',
+      'الرياض': 'RYD',
+      'الدمام': 'DMM',
+      'القصيم': 'QSM',
+      'حائل': 'HAI'
+    }
+    setHeaderFromCode(stationCodes[fromStation] || 'ABQ')
+    setHeaderToCode(stationCodes[toStation] || 'RYD')
+    setHeaderDateText(departureDate || 'الخميس، 13 نوفمبر 2025')
+    const totalP = parseInt(adults) + parseInt(children) + parseInt(infants)
+    setHeaderPassengersText(totalP > 0 ? `${totalP} بالغ` : '1 بالغ')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const [selectedDate, setSelectedDate] = useState(0)
   const [showSortMenu, setShowSortMenu] = useState(false)
@@ -132,7 +188,7 @@ export default function BookingDetailsPage() {
               justifyContent: 'flex-end',
               gap: '0.75rem',
               marginBottom: '0.5rem',
-            }}>
+              }}>
               <div style={{
                 fontSize: '22px',
                 fontWeight: 'bold',
@@ -141,11 +197,11 @@ export default function BookingDetailsPage() {
                 alignItems: 'center',
                 gap: '0.5rem',
               }}>
-                <span>{fromCode}</span>
+                <span>{headerFromCode}</span>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2">
                   <polyline points="15 18 9 12 15 6" />
                 </svg>
-                <span>{toCode}</span>
+                <span>{headerToCode}</span>
               </div>
 
               <Link
@@ -183,7 +239,7 @@ export default function BookingDetailsPage() {
                   <line x1="8" y1="2" x2="8" y2="6" />
                   <line x1="3" y1="10" x2="21" y2="10" />
                 </svg>
-                <span>الخميس، 13 نوفمبر 2025</span>
+                <span>{headerDateText}</span>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
@@ -191,7 +247,7 @@ export default function BookingDetailsPage() {
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                   <circle cx="12" cy="7" r="4" />
                 </svg>
-                <span>{totalPassengers} بالغ</span>
+                <span>{headerPassengersText}</span>
               </div>
             </div>
           </div>

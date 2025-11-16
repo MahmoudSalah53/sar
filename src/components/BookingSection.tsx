@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 
 // بيانات المحطات
 const stations = [
@@ -29,6 +30,12 @@ const availableRoutes: { [key: string]: string[] } = {
 }
 
 export default function BookingSection() {
+  const router = useRouter()
+
+  const getStationByName = (name: string | null | undefined) => {
+    if (!name) return null
+    return stations.find((s) => s.name === name) || null
+  }
   const [fromStation, setFromStation] = useState<string>('')
   const [toStation, setToStation] = useState<string>('')
   const [showFromDropdown, setShowFromDropdown] = useState(false)
@@ -106,6 +113,40 @@ export default function BookingSection() {
     setShowFromDropdown(false)
     setShowToDropdown(false)
   }
+
+  // حفظ القيم المختارة في localStorage
+  useEffect(() => {
+    try {
+      const from = getStationByName(fromStation)
+      const to = getStationByName(toStation)
+
+      const payload = {
+        fromStationName: from?.name || '',
+        fromStationCode: from?.code || '',
+        toStationName: to?.name || '',
+        toStationCode: to?.code || '',
+        tripType,
+        selectedDateISO: selectedDate ? selectedDate.toISOString() : '',
+        selectedReturnDateISO: selectedReturnDate ? selectedReturnDate.toISOString() : '',
+        passengers: {
+          adults,
+          children,
+          infants,
+          summaryAr: (function () {
+            const parts: string[] = []
+            if (adults > 0) parts.push(`${adults} بالغ`)
+            if (children > 0) parts.push(`${children} طفل`)
+            if (infants > 0) parts.push(`${infants} رضيع`)
+            return parts.length > 0 ? parts.join(', ') : '1 بالغ'
+          })()
+        }
+      }
+
+      window.localStorage.setItem('bookingDraft', JSON.stringify(payload))
+    } catch {
+      // تجاهل أخطاء التخزين
+    }
+  }, [fromStation, toStation, tripType, selectedDate, selectedReturnDate, adults, children, infants])
 
   // دوال التقويم
   const arabicMonths = [
@@ -833,7 +874,10 @@ export default function BookingSection() {
         </a>
       </div>
 
-      <button className="select-trip-btn">
+    <button
+      className="select-trip-btn"
+      onClick={() => router.push('/booking-details')}
+    >
         <span>اختيار الرحلة</span>
         <i className="fas fa-arrow-left"></i>
       </button>
