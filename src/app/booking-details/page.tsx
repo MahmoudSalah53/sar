@@ -1,12 +1,13 @@
 'use client'
 
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
 
 export default function BookingDetailsPage() {
   const searchParams = useSearchParams()
+  const router = useRouter()
 
   const fromStation = searchParams.get('from') || 'الهفوف'
   const toStation = searchParams.get('to') || 'الرياض'
@@ -81,7 +82,7 @@ export default function BookingDetailsPage() {
     setHeaderDateText(departureDate || 'الخميس، 13 نوفمبر 2025')
     const totalP = parseInt(adults) + parseInt(children) + parseInt(infants)
     setHeaderPassengersText(totalP > 0 ? `${totalP} بالغ` : '1 بالغ')
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const [selectedDate, setSelectedDate] = useState(0)
@@ -93,7 +94,148 @@ export default function BookingDetailsPage() {
     evening: false
   })
   const [sortByPrice, setSortByPrice] = useState(false)
-  const [expandedTripId, setExpandedTripId] = useState<number | null>(null)
+  const [selectedTripId, setSelectedTripId] = useState<number | null>(null)
+  const [selectedClass, setSelectedClass] = useState<'economy' | 'business' | null>(null)
+  const [selectedPlanName, setSelectedPlanName] = useState<string | null>(null)
+  const [selectedPlanPrice, setSelectedPlanPrice] = useState<number>(0)
+  const [showPassengerDetails, setShowPassengerDetails] = useState(false)
+  const [showExtras, setShowExtras] = useState(false)
+  const [showPayment, setShowPayment] = useState(false)
+  const [isPaying, setIsPaying] = useState(false)
+  const [extras, setExtras] = useState({
+    meal: false,
+    baggage: false,
+    seat: false,
+    lounge: false,
+  })
+  const extrasPrices = { meal: 10, baggage: 10, seat: 5, lounge: 5 }
+  const extrasTotal = (extras.meal ? extrasPrices.meal : 0)
+    + (extras.baggage ? extrasPrices.baggage : 0)
+    + (extras.seat ? extrasPrices.seat : 0)
+    + (extras.lounge ? extrasPrices.lounge : 0)
+
+  // Passenger/contact form state and validation
+  const [form, setForm] = useState({
+    title: 'السيد',
+    firstName: '',
+    lastName: '',
+    docType: 'الهوية الوطنية',
+    docNumber: '',
+    dob: '',
+    phone: '',
+    email: ''
+  })
+  const [errors, setErrors] = useState<{ [K in keyof typeof form]?: string }>({})
+
+  const updateField = <K extends keyof typeof form>(key: K, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }))
+    setErrors((prev) => ({ ...prev, [key]: undefined })) // clear error on change
+  }
+
+  // Display value for DOB as dd/mm/yyyy while storing ISO yyyy-mm-dd
+  const [dobDisplay, setDobDisplay] = useState('')
+  useEffect(() => {
+    if (form.dob) {
+      // convert ISO -> dd/mm/yyyy
+      const [y, m, d] = form.dob.split('-')
+      if (y && m && d) setDobDisplay(`${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`)
+    }
+  }, [form.dob])
+
+  const handleDobInput = (val: string) => {
+    // keep digits only, max 8 digits (ddmmyyyy)
+    const digits = val.replace(/\D/g, '').slice(0, 8)
+    let dd = digits.slice(0, 2)
+    let mm = digits.slice(2, 4)
+    let yyyy = digits.slice(4, 8)
+    const display =
+      [dd, mm, yyyy].filter(Boolean).join('/')
+    setDobDisplay(display)
+
+    // when full length, update ISO in form
+    if (digits.length === 8) {
+      const iso = `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`
+      updateField('dob', iso)
+    } else {
+      // clear dob until complete
+      updateField('dob', '')
+    }
+  }
+
+  const validateForm = (): boolean => {
+    const newErrors: { [K in keyof typeof form]?: string } = {}
+
+    if (!form.firstName.trim()) newErrors.firstName = 'الاسم الأول مطلوب'
+    if (!form.lastName.trim()) newErrors.lastName = 'اسم العائلة مطلوب'
+    if (!form.docNumber.trim()) newErrors.docNumber = 'رقم الوثيقة مطلوب'
+
+    // Date YYYY-MM-DD basic check
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(form.dob)) {
+      newErrors.dob = 'صيغة التاريخ يجب أن تكون YYYY-MM-DD'
+    } else {
+      const d = new Date(form.dob)
+      if (isNaN(d.getTime())) newErrors.dob = 'تاريخ غير صالح'
+    }
+
+    // Phone basic: digits 8-15
+    if (!/^\+?\d{8,15}$/.test(form.phone.trim())) {
+      newErrors.phone = 'رقم الجوال غير صالح'
+    }
+
+    // Email simple regex
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(form.email.trim())) {
+      newErrors.email = 'البريد الإلكتروني غير صالح'
+    }
+
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
+
+  // Payment form state & validation
+  const [paymentForm, setPaymentForm] = useState({
+    cardName: '',
+    cardNumber: '',
+    expMonth: '',
+    expYear: '',
+    cvv: ''
+  })
+  const [paymentErrors, setPaymentErrors] = useState<{ [K in keyof typeof paymentForm]?: string }>({})
+
+  const updatePaymentField = <K extends keyof typeof paymentForm>(key: K, value: string) => {
+    setPaymentForm((prev) => ({ ...prev, [key]: value }))
+    setPaymentErrors((prev) => ({ ...prev, [key]: undefined }))
+  }
+
+  const validatePaymentForm = (): boolean => {
+    const newErrors: { [K in keyof typeof paymentForm]?: string } = {}
+
+    if (!paymentForm.cardName.trim()) {
+      newErrors.cardName = 'اسم حامل البطاقة مطلوب'
+    }
+
+    const digitsCard = paymentForm.cardNumber.replace(/\D/g, '')
+    if (digitsCard.length < 12) {
+      newErrors.cardNumber = 'رقم البطاقة غير صالح'
+    }
+
+    const month = parseInt(paymentForm.expMonth, 10)
+    if (!(month >= 1 && month <= 12)) {
+      newErrors.expMonth = 'شهر غير صالح'
+    }
+
+    const yearDigits = paymentForm.expYear.replace(/\D/g, '')
+    if (yearDigits.length < 2) {
+      newErrors.expYear = 'سنة غير صالحة'
+    }
+
+    const cvvDigits = paymentForm.cvv.replace(/\D/g, '')
+    if (!(cvvDigits.length === 3 || cvvDigits.length === 4)) {
+      newErrors.cvv = 'رمز التحقق غير صالح'
+    }
+
+    setPaymentErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
 
   const dates = [
     { date: '١٣ نوفمبر ٢٠٢٥', day: 'الخميس', isActive: true },
@@ -122,32 +264,74 @@ export default function BookingDetailsPage() {
     }
   ]
 
+  const handleSelectPlan = (trip: typeof trips[number], plan: {
+    classKey: 'economy' | 'business',
+    variantKey: 'saver' | 'standard' | 'premium',
+    displayName: string,
+    pricePerPassenger: number,
+    features: string[]
+  }) => {
+    const total = plan.pricePerPassenger * totalPassengers
+    setSelectedPlanName(plan.displayName)
+    setSelectedPlanPrice(total)
+    setShowPassengerDetails(true)
+
+    const selectedTrip = {
+      id: trip.id,
+      trainNumber: trip.trainNumber,
+      departure: trip.departure,
+      arrival: trip.arrival,
+      from: trip.departureStation,
+      to: trip.arrivalStation,
+      stops: trip.stops
+    }
+
+    const selectedPlan = {
+      classKey: plan.classKey,
+      variantKey: plan.variantKey,
+      displayName: plan.displayName,
+      pricePerPassenger: plan.pricePerPassenger,
+      totalPrice: total,
+      passengers: totalPassengers,
+      features: plan.features
+    }
+
+    try {
+      window.localStorage.setItem('selectedTrip', JSON.stringify(selectedTrip))
+      window.localStorage.setItem('selectedPlan', JSON.stringify(selectedPlan))
+    } catch {
+      // ignore storage issues
+    }
+  }
+
   return (
     <div className="select-trip-page">
       <header className="trip-header">
         <div className="trip-header-content">
-          <Image
-            src="https://tickets.sar.com.sa/images/vectors/SAR-Logo.svg"
-            alt="SAR Logo"
-            width={140}
-            height={70}
-            className="sar-logo"
-          />
+          <Link href="/" style={{ display: 'inline-block' }}>
+            <Image
+              src="https://tickets.sar.com.sa/images/vectors/SAR-Logo.svg"
+              alt="SAR Logo"
+              width={140}
+              height={70}
+              className="sar-logo"
+            />
+          </Link>
           <nav className="booking-nav">
             <div className="nav-step active">
               <div className="nav-underline active"></div>
               <span className="nav-label">اختيار الرحلة</span>
             </div>
             <div className="nav-step">
-              <div className="nav-underline"></div>
+              <div className="nav-underline" style={{ backgroundColor: (showPassengerDetails || showExtras || showPayment) ? '#2b8a9d' : '#e5e7eb' }}></div>
               <span className="nav-label">تفاصيل الركاب</span>
             </div>
             <div className="nav-step">
-              <div className="nav-underline"></div>
+              <div className="nav-underline" style={{ backgroundColor: (showExtras || showPayment) ? '#2b8a9d' : '#e5e7eb' }}></div>
               <span className="nav-label">المقاعد والخدمات الإضافية</span>
             </div>
             <div className="nav-step">
-              <div className="nav-underline"></div>
+              <div className="nav-underline" style={{ backgroundColor: showPayment ? '#2b8a9d' : '#e5e7eb' }}></div>
               <span className="nav-label">الدفع</span>
             </div>
           </nav>
@@ -177,18 +361,18 @@ export default function BookingDetailsPage() {
             direction: 'rtl',
           }}>
             <span style={{ fontSize: '18px', fontWeight: 'normal', color: '#666' }}>ر.س</span>
-            <span style={{ fontSize: '20px', fontWeight: 'normal', color: '#999' }}>00.</span>
-            <span>0</span>
+            <span style={{ fontSize: '20px', fontWeight: 'normal', color: '#999' }}>{(selectedPlanPrice + extrasTotal).toFixed(2).split('.')[1]}</span>
+            <span>{(selectedPlanPrice + extrasTotal).toFixed(2).split('.')[0]}</span>
           </div>
 
-          <div style={{ textAlign: 'right'}}>
+          <div style={{ textAlign: 'right' }}>
             <div style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-end',
               gap: '0.75rem',
               marginBottom: '0.5rem',
-              }}>
+            }}>
               <div style={{
                 fontSize: '22px',
                 fontWeight: 'bold',
@@ -253,648 +437,1530 @@ export default function BookingDetailsPage() {
           </div>
         </div>
 
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '1.5rem',
-          position: 'relative'
-        }}>
-          <h2 style={{
-            fontSize: '24px',
-            fontWeight: 'bold',
-            color: '#2b8a9d',
-            margin: 0
-          }}>
-            اختيار رحلة الذهاب
-          </h2>
-
-          <div style={{ position: 'relative' }}>
-            <button 
-              onClick={() => setShowSortMenu(!showSortMenu)}
-              style={{
-                backgroundColor: '#e8f5f7',
-                border: '1px solid #d0e8ec',
+        {!showPassengerDetails && !showExtras && !showPayment && (
+          <>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '1.5rem',
+              position: 'relative'
+            }}>
+              <h2 style={{
+                fontSize: '24px',
+                fontWeight: 'bold',
                 color: '#2b8a9d',
-                padding: '0.75rem 1.25rem',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                fontSize: '14px',
-                fontWeight: '500',
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="4" y1="21" x2="4" y2="14" />
-                <line x1="4" y1="10" x2="4" y2="3" />
-                <line x1="12" y1="21" x2="12" y2="12" />
-                <line x1="12" y1="8" x2="12" y2="3" />
-                <line x1="20" y1="21" x2="20" y2="16" />
-                <line x1="20" y1="12" x2="20" y2="3" />
-                <line x1="1" y1="14" x2="7" y2="14" />
-                <line x1="9" y1="8" x2="15" y2="8" />
-                <line x1="17" y1="16" x2="23" y2="16" />
-              </svg>
-              تصنيف
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
-            </button>
-
-            {showSortMenu && (
-              <div style={{
-                position: 'absolute',
-                top: '100%',
-                right: 0,
-                marginTop: '0.5rem',
-                backgroundColor: 'white',
-                borderRadius: '8px',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                padding: '1.5rem',
-                minWidth: '280px',
-                zIndex: 1000,
-                direction: 'rtl'
+                margin: 0
               }}>
-                <h3 style={{
-                  fontSize: '16px',
-                  fontWeight: 'bold',
-                  color: '#333',
-                  marginBottom: '1rem',
-                  marginTop: 0
-                }}>
-                  التصنيف وفق
-                </h3>
+                اختيار رحلة الذهاب
+              </h2>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                    <span style={{ fontSize: '14px', color: '#333' }}>
-                      <span style={{ color: '#666', marginLeft: '0.5rem' }}>الصباح المبكر</span>
-                      <span style={{ color: '#999' }}>00:00 - 06:00</span>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={timeFilters.earlyMorning}
-                      onChange={(e) => setTimeFilters({...timeFilters, earlyMorning: e.target.checked})}
-                      style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                    />
-                  </label>
-
-                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                    <span style={{ fontSize: '14px', color: '#333' }}>
-                      <span style={{ color: '#666', marginLeft: '0.5rem' }}>صباحًا</span>
-                      <span style={{ color: '#999' }}>06:00 - 12:00</span>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={timeFilters.morning}
-                      onChange={(e) => setTimeFilters({...timeFilters, morning: e.target.checked})}
-                      style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                    />
-                  </label>
-
-                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                    <span style={{ fontSize: '14px', color: '#333' }}>
-                      <span style={{ color: '#666', marginLeft: '0.5rem' }}>الظهيرة</span>
-                      <span style={{ color: '#999' }}>12:00 - 18:00</span>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={timeFilters.afternoon}
-                      onChange={(e) => setTimeFilters({...timeFilters, afternoon: e.target.checked})}
-                      style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                    />
-                  </label>
-
-                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                    <span style={{ fontSize: '14px', color: '#333' }}>
-                      <span style={{ color: '#666', marginLeft: '0.5rem' }}>مساءً</span>
-                      <span style={{ color: '#999' }}>18:00 - 00:00</span>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={timeFilters.evening}
-                      onChange={(e) => setTimeFilters({...timeFilters, evening: e.target.checked})}
-                      style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                    />
-                  </label>
-                </div>
-
-                <h3 style={{
-                  fontSize: '16px',
-                  fontWeight: 'bold',
-                  color: '#333',
-                  marginBottom: '1rem',
-                  marginTop: 0
-                }}>
-                  ترتيب حسب
-                </h3>
-
-                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', marginBottom: '1.5rem' }}>
-                  <span style={{ fontSize: '14px', color: '#333' }}>السعر</span>
-                  <input
-                    type="checkbox"
-                    checked={sortByPrice}
-                    onChange={(e) => setSortByPrice(e.target.checked)}
-                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                  />
-                </label>
-
-                <button 
-                  onClick={() => setShowSortMenu(false)}
+              <div style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setShowSortMenu(!showSortMenu)}
                   style={{
-                    width: '100%',
-                    backgroundColor: '#2b8a9d',
-                    color: 'white',
-                    border: 'none',
+                    backgroundColor: '#e8f5f7',
+                    border: '1px solid #d0e8ec',
+                    color: '#2b8a9d',
+                    padding: '0.75rem 1.25rem',
                     borderRadius: '8px',
-                    padding: '0.875rem',
-                    fontSize: '15px',
-                    fontWeight: '600',
                     cursor: 'pointer',
-                    transition: 'background-color 0.2s'
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    fontSize: '14px',
+                    fontWeight: '500',
                   }}
-                  onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#247282'}
-                  onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#2b8a9d'}
                 >
-                  تطبيق
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="4" y1="21" x2="4" y2="14" />
+                    <line x1="4" y1="10" x2="4" y2="3" />
+                    <line x1="12" y1="21" x2="12" y2="12" />
+                    <line x1="12" y1="8" x2="12" y2="3" />
+                    <line x1="20" y1="21" x2="20" y2="16" />
+                    <line x1="20" y1="12" x2="20" y2="3" />
+                    <line x1="1" y1="14" x2="7" y2="14" />
+                    <line x1="9" y1="8" x2="15" y2="8" />
+                    <line x1="17" y1="16" x2="23" y2="16" />
+                  </svg>
+                  تصنيف
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
                 </button>
-              </div>
-            )}
-          </div>
-        </div>
 
-        <div style={{
-          backgroundColor: 'white',
-          borderRadius: '8px',
-          padding: '1.25rem 2rem',
-          marginBottom: '1.5rem',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between'
-        }}>
-          <button style={{
-            background: 'none',
-            border: 'none',
-            fontSize: '18px',
-            cursor: 'pointer',
-            color: '#2b8a9d',
-            padding: '0.5rem',
-            display: 'flex',
-            alignItems: 'center'
-          }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-          </button>
-
-          <div style={{ display: 'flex', gap: '0.5rem', flex: 1, justifyContent: 'center', padding: '0 1rem' }}>
-            {dates.map((date, index) => (
-              <div
-                key={index}
-                onClick={() => setSelectedDate(index)}
-                style={{
-                  padding: '0.875rem 1.5rem',
-                  borderRadius: '8px',
-                  backgroundColor: selectedDate === index ? '#2b8a9d' : 'transparent',
-                  color: selectedDate === index ? 'white' : '#333',
-                  cursor: 'pointer',
-                  textAlign: 'center',
-                  minWidth: '130px',
-                  border: selectedDate === index ? 'none' : '1px solid #e5e5e5',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '0.25rem' }}>
-                  {date.date}
-                </div>
-                <div style={{ fontSize: '13px', opacity: 0.9 }}>
-                  {date.day}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <button style={{
-            background: 'none',
-            border: 'none',
-            fontSize: '18px',
-            cursor: 'pointer',
-            color: '#2b8a9d',
-            padding: '0.5rem',
-            display: 'flex',
-            alignItems: 'center'
-          }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-          </button>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {trips.map((trip) => (
-            <div
-              key={trip.id}
-              style={{
-                backgroundColor: 'white',
-                borderRadius: '12px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-                overflow: 'hidden',
-                transition: 'all 0.3s ease'
-              }}
-            >
-              <div style={{ padding: '1.75rem 2rem' }}>
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '2.5rem',
-                  direction: 'rtl'
-                }}>
-                  <div style={{ display: 'flex', gap: '0.625rem' }}>
-                    <div style={{
-                      backgroundColor: '#f5f5f5',
-                      border: '1px solid #e0e0e0',
-                      borderRadius: '8px',
-                      padding: '1rem 1.25rem',
-                      textAlign: 'center',
-                      minWidth: '145px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}>
-                      <div style={{ fontSize: '13px', color: '#666', marginBottom: '0.35rem', fontWeight: '500' }}>
-                        الدرجة الأعمال
-                      </div>
-                      <div style={{ fontSize: '10px', color: '#999', marginBottom: '0.4rem' }}>من</div>
-                      <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#1a1a1a', lineHeight: '1' }}>
-                        {trip.businessPrice.toFixed(2).split('.')[0]}
-                        <span style={{ fontSize: '14px', fontWeight: 'normal' }}>.{trip.businessPrice.toFixed(2).split('.')[1]}</span>
-                        <span style={{ fontSize: '12px', fontWeight: 'normal', marginRight: '2px' }}>ر.س</span>
-                      </div>
-                    </div>
-
-                    <div 
-                      onClick={() => setExpandedTripId(expandedTripId === trip.id ? null : trip.id)}
-                      style={{
-                        backgroundColor: expandedTripId === trip.id ? '#e8f5f7' : '#f5f5f5',
-                        border: expandedTripId === trip.id ? '2px solid #2b8a9d' : '1px solid #e0e0e0',
-                        borderRadius: '8px',
-                        padding: '1rem 1.25rem',
-                        textAlign: 'center',
-                        minWidth: '145px',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s',
-                        transform: expandedTripId === trip.id ? 'scale(1.02)' : 'scale(1)'
-                      }}
-                    >
-                      <div style={{ fontSize: '13px', color: '#666', marginBottom: '0.35rem', fontWeight: '500' }}>
-                        الاقتصادية التوفيرية
-                      </div>
-                      <div style={{ fontSize: '10px', color: '#999', marginBottom: '0.4rem' }}>من</div>
-                      <div style={{ fontSize: '22px', fontWeight: 'bold', color: expandedTripId === trip.id ? '#2b8a9d' : '#1a1a1a', lineHeight: '1' }}>
-                        {trip.economyPrice.toFixed(2).split('.')[0]}
-                        <span style={{ fontSize: '14px', fontWeight: 'normal' }}>.{trip.economyPrice.toFixed(2).split('.')[1]}</span>
-                        <span style={{ fontSize: '12px', fontWeight: 'normal', marginRight: '2px' }}>ر.س</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1.75rem', flex: 1 }}>
-                    <div style={{ textAlign: 'center', minWidth: '75px' }}>
-                      <div style={{ fontSize: '26px', fontWeight: 'bold', color: '#1a1a1a', marginBottom: '0.35rem' }}>
-                        {trip.departure}
-                      </div>
-                      <div style={{ fontSize: '13px', color: '#666' }}>{trip.departureStation}</div>
-                    </div>
-
-                    <div style={{ flex: 1, position: 'relative', paddingTop: '0.5rem', minWidth: '180px' }}>
-                      <div style={{
-                        height: '2px',
-                        backgroundColor: 'transparent',
-                        position: 'relative',
-                        backgroundImage: 'repeating-linear-gradient(to left, #2b8a9d 0, #2b8a9d 6px, transparent 6px, transparent 12px)'
-                      }}>
-                      </div>
-                      <div style={{
-                        position: 'absolute',
-                        top: '-8px',
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        textAlign: 'center',
-                        fontSize: '11px',
-                        color: '#2b8a9d',
-                        whiteSpace: 'nowrap',
-                        fontWeight: '500'
-                      }}>
-                        {trip.stops}
-                      </div>
-                    </div>
-
-                    <div style={{ textAlign: 'center', minWidth: '75px' }}>
-                      <div style={{ fontSize: '26px', fontWeight: 'bold', color: '#1a1a1a', marginBottom: '0.35rem' }}>
-                        {trip.arrival}
-                      </div>
-                      <div style={{ fontSize: '13px', color: '#666' }}>{trip.arrivalStation}</div>
-                    </div>
-                  </div>
-
-                  <div style={{ textAlign: 'center', minWidth: '70px' }}>
-                    <div style={{ fontSize: '30px', fontWeight: 'bold', color: '#1a1a1a', marginBottom: '0.35rem' }}>
-                      {trip.trainNumber}
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#999' }}>رقم القطار</div>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{
-                maxHeight: expandedTripId === trip.id ? '2000px' : '0',
-                opacity: expandedTripId === trip.id ? 1 : 0,
-                transition: 'all 0.5s ease-in-out',
-                overflow: 'hidden'
-              }}>
-                {expandedTripId === trip.id && (
-                  <div style={{ 
-                    borderTop: '1px solid #e5e5e5',
-                    padding: '2rem',
+                {showSortMenu && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    marginTop: '0.5rem',
+                    backgroundColor: 'white',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    padding: '1.5rem',
+                    minWidth: '280px',
+                    zIndex: 1000,
                     direction: 'rtl'
                   }}>
-                    <div style={{ 
-                      marginBottom: '2rem',
-                      borderRadius: '12px',
-                      overflow: 'hidden',
-                      height: '250px'
+                    <h3 style={{
+                      fontSize: '16px',
+                      fontWeight: 'bold',
+                      color: '#333',
+                      marginBottom: '1rem',
+                      marginTop: 0
                     }}>
-                      <Image
-                        src="https://tickets.sar.com.sa/images/sub-classes/Economy-EAST%20TRAIN.png"
-                        alt="Train Interior"
-                        width={1200}
-                        height={250}
-                        unoptimized
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      التصنيف وفق
+                    </h3>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                        <span style={{ fontSize: '14px', color: '#333' }}>
+                          <span style={{ color: '#666', marginLeft: '0.5rem' }}>الصباح المبكر</span>
+                          <span style={{ color: '#999' }}>00:00 - 06:00</span>
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={timeFilters.earlyMorning}
+                          onChange={(e) => setTimeFilters({ ...timeFilters, earlyMorning: e.target.checked })}
+                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                        />
+                      </label>
+
+                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                        <span style={{ fontSize: '14px', color: '#333' }}>
+                          <span style={{ color: '#666', marginLeft: '0.5rem' }}>صباحًا</span>
+                          <span style={{ color: '#999' }}>06:00 - 12:00</span>
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={timeFilters.morning}
+                          onChange={(e) => setTimeFilters({ ...timeFilters, morning: e.target.checked })}
+                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                        />
+                      </label>
+
+                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                        <span style={{ fontSize: '14px', color: '#333' }}>
+                          <span style={{ color: '#666', marginLeft: '0.5rem' }}>الظهيرة</span>
+                          <span style={{ color: '#999' }}>12:00 - 18:00</span>
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={timeFilters.afternoon}
+                          onChange={(e) => setTimeFilters({ ...timeFilters, afternoon: e.target.checked })}
+                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                        />
+                      </label>
+
+                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                        <span style={{ fontSize: '14px', color: '#333' }}>
+                          <span style={{ color: '#666', marginLeft: '0.5rem' }}>مساءً</span>
+                          <span style={{ color: '#999' }}>18:00 - 00:00</span>
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={timeFilters.evening}
+                          onChange={(e) => setTimeFilters({ ...timeFilters, evening: e.target.checked })}
+                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                        />
+                      </label>
+                    </div>
+
+                    <h3 style={{
+                      fontSize: '16px',
+                      fontWeight: 'bold',
+                      color: '#333',
+                      marginBottom: '1rem',
+                      marginTop: 0
+                    }}>
+                      ترتيب حسب
+                    </h3>
+
+                    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', marginBottom: '1.5rem' }}>
+                      <span style={{ fontSize: '14px', color: '#333' }}>السعر</span>
+                      <input
+                        type="checkbox"
+                        checked={sortByPrice}
+                        onChange={(e) => setSortByPrice(e.target.checked)}
+                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                       />
-                    </div>
+                    </label>
 
-                    <div style={{ display: 'flex', gap: '1.5rem', justifyContent: 'space-between' }}>
-                      <div style={{
-                        flex: 1,
-                        backgroundColor: '#f9fafb',
-                        borderRadius: '12px',
-                        padding: '1.5rem',
-                        border: '1px solid #e5e5e5'
-                      }}>
-                        <h3 style={{ 
-                          fontSize: '20px', 
-                          fontWeight: 'bold', 
-                          color: '#2b8a9d',
-                          marginTop: 0,
-                          marginBottom: '0.5rem'
-                        }}>
-                          الاقتصادية التوفيرية
-                        </h3>
-                        <div style={{ 
-                          fontSize: '32px', 
-                          fontWeight: 'bold', 
-                          color: '#1a1a1a',
-                          marginBottom: '0.25rem'
-                        }}>
-                          {trip.economyPrice.toFixed(2).split('.')[0]}
-                          <span style={{ fontSize: '20px', fontWeight: 'normal' }}>.{trip.economyPrice.toFixed(2).split('.')[1]}</span>
-                          <span style={{ fontSize: '16px', fontWeight: 'normal', color: '#666' }}>ر.س</span>
-                        </div>
-                        <div style={{ fontSize: '13px', color: '#999', marginBottom: '1.5rem' }}>
-                          مجموع كل الركاب
-                        </div>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
-                              <path d="M20 6L9 17l-5-5"/>
-                            </svg>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                الأمتعة المحمولة 
-                                <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
-                                  مجاني
-                                </span>
-                              </div>
-                              <div style={{ fontSize: '12px', color: '#666' }}>1 كجم 10 + 1 حقيبة متوسطة 25 كجم</div>
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2">
-                              <line x1="18" y1="6" x2="6" y2="18"/>
-                              <line x1="6" y1="6" x2="18" y2="18"/>
-                            </svg>
-                            <div style={{flex: 1 }}>
-                              <div style={{ fontSize: '14px', fontWeight: '500', color: '#333' }}>الأمتعة المشحونة</div>
-                              <div style={{ fontSize: '12px', color: '#666' }}>غير متضمنة</div>
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2">
-                              <line x1="18" y1="6" x2="6" y2="18"/>
-                              <line x1="6" y1="6" x2="18" y2="18"/>
-                            </svg>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: '14px', fontWeight: '500', color: '#333' }}>اختيار المقعد</div>
-                              <div style={{ fontSize: '12px', color: '#666' }}>غير متضمن</div>
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
-                              <path d="M20 6L9 17l-5-5"/>
-                            </svg>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                تغيير الحجز
-                                <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
-                                  رسوم 20%
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
-                              <path d="M20 6L9 17l-5-5"/>
-                            </svg>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                إلغاء الحجز
-                                <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
-                                  رسوم 40%
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
-                              <path d="M20 6L9 17l-5-5"/>
-                            </svg>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                عدم الحضور
-                                <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
-                                  رسوم 100%
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <button style={{
-                          width: '100%',
-                          backgroundColor: '#2b8a9d',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '8px',
-                          padding: '0.875rem',
-                          fontSize: '15px',
-                          fontWeight: '600',
-                          cursor: 'pointer',
-                          transition: 'background-color 0.2s'
-                        }}>
-                          اختيار
-                        </button>
-                      </div>
-
-                      <div style={{
-                        flex: 1,
-                        backgroundColor: '#f9fafb',
-                        borderRadius: '12px',
-                        padding: '1.5rem',
-                        border: '2px solid #2b8a9d'
-                      }}>
-                        <h3 style={{ 
-                          fontSize: '20px', 
-                          fontWeight: 'bold', 
-                          color: '#2b8a9d',
-                          marginTop: 0,
-                          marginBottom: '0.5rem'
-                        }}>
-                          الاقتصادية
-                        </h3>
-                        <div style={{ 
-                          fontSize: '32px', 
-                          fontWeight: 'bold', 
-                          color: '#1a1a1a',
-                          marginBottom: '0.25rem'
-                        }}>
-                          {trip.economySaver.toFixed(2).split('.')[0]}
-                          <span style={{ fontSize: '20px', fontWeight: 'normal' }}>.{trip.economySaver.toFixed(2).split('.')[1]}</span>
-                          <span style={{ fontSize: '16px', fontWeight: 'normal', color: '#666' }}>ر.س</span>
-                        </div>
-                        <div style={{ fontSize: '13px', color: '#999', marginBottom: '1.5rem' }}>
-                          مجموع كل الركاب
-                        </div>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
-                              <path d="M20 6L9 17l-5-5"/>
-                            </svg>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                الأمتعة المحمولة 
-                                <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
-                                  مجاني
-                                </span>
-                              </div>
-                              <div style={{ fontSize: '12px', color: '#666' }}>1 حقيبة يد 10 كجم + 1 حقيبة متوسطة 25 كجم</div>
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
-                              <path d="M20 6L9 17l-5-5"/>
-                            </svg>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                الأمتعة المشحونة
-                                <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
-                                  مجاني
-                                </span>
-                              </div>
-                              <div style={{ fontSize: '12px', color: '#666' }}>2 حقيبة كبيرة 25 كجم لكل حقيبة</div>
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
-                              <path d="M20 6L9 17l-5-5"/>
-                            </svg>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                اختيار المقعد
-                                <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
-                                  مجاني
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
-                              <path d="M20 6L9 17l-5-5"/>
-                            </svg>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                تغيير الحجز
-                                <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
-                                  مجاني
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
-                              <path d="M20 6L9 17l-5-5"/>
-                            </svg>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                إلغاء الحجز
-                                <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
-                                  مجاني
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
-                              <path d="M20 6L9 17l-5-5"/>
-                            </svg>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                عدم الحضور
-                                <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
-                                  رسوم 50%
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <button style={{
-                          width: '100%',
-                          backgroundColor: '#2b8a9d',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '8px',
-                          padding: '0.875rem',
-                          fontSize: '15px',
-                          fontWeight: '600',
-                          cursor: 'pointer',
-                          transition: 'background-color 0.2s'
-                        }}>
-                          اختيار
-                        </button>
-                      </div>
-                    </div>
+                    <button
+                      onClick={() => setShowSortMenu(false)}
+                      style={{
+                        width: '100%',
+                        backgroundColor: '#2b8a9d',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '0.875rem',
+                        fontSize: '15px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        transition: 'background-color 0.2s'
+                      }}
+                      onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#247282'}
+                      onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#2b8a9d'}
+                    >
+                      تطبيق
+                    </button>
                   </div>
                 )}
               </div>
             </div>
-          ))}
+
+            <div style={{
+              backgroundColor: 'white',
+              borderRadius: '8px',
+              padding: '1.25rem 2rem',
+              marginBottom: '1.5rem',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <button style={{
+                background: 'none',
+                border: 'none',
+                fontSize: '18px',
+                cursor: 'pointer',
+                color: '#2b8a9d',
+                padding: '0.5rem',
+                display: 'flex',
+                alignItems: 'center'
+              }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </button>
+
+              <div style={{ display: 'flex', gap: '0.5rem', flex: 1, justifyContent: 'center', padding: '0 1rem' }}>
+                {dates.map((date, index) => (
+                  <div
+                    key={index}
+                    onClick={() => setSelectedDate(index)}
+                    style={{
+                      padding: '0.875rem 1.5rem',
+                      borderRadius: '8px',
+                      backgroundColor: selectedDate === index ? '#2b8a9d' : 'transparent',
+                      color: selectedDate === index ? 'white' : '#333',
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                      minWidth: '130px',
+                      border: selectedDate === index ? 'none' : '1px solid #e5e5e5',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '0.25rem' }}>
+                      {date.date}
+                    </div>
+                    <div style={{ fontSize: '13px', opacity: 0.9 }}>
+                      {date.day}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button style={{
+                background: 'none',
+                border: 'none',
+                fontSize: '18px',
+                cursor: 'pointer',
+                color: '#2b8a9d',
+                padding: '0.5rem',
+                display: 'flex',
+                alignItems: 'center'
+              }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {trips.map((trip) => (
+                <div
+                  key={trip.id}
+                  style={{
+                    backgroundColor: 'white',
+                    borderRadius: '12px',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                    overflow: 'hidden',
+                    transition: 'all 0.3s ease'
+                  }}
+                >
+                  <div style={{ padding: '1.75rem 2rem' }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '2.5rem',
+                      direction: 'rtl'
+                    }}>
+                      <div style={{ display: 'flex', gap: '0.625rem' }}>
+                        <div
+                          onClick={() => {
+                            const isActive = selectedTripId === trip.id && selectedClass === 'business'
+                            if (isActive) {
+                              setSelectedTripId(null)
+                              setSelectedClass(null)
+                            } else {
+                              setSelectedTripId(trip.id)
+                              setSelectedClass('business')
+                            }
+                          }}
+                          style={{
+                            backgroundColor: selectedTripId === trip.id && selectedClass === 'business' ? '#e8f5f7' : '#f5f5f5',
+                            border: selectedTripId === trip.id && selectedClass === 'business' ? '2px solid #2b8a9d' : '1px solid #e0e0e0',
+                            borderRadius: '8px',
+                            padding: '1rem 1.25rem',
+                            textAlign: 'center',
+                            minWidth: '145px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            transform: selectedTripId === trip.id && selectedClass === 'business' ? 'scale(1.02)' : 'scale(1)'
+                          }}>
+                          <div style={{ fontSize: '13px', color: '#666', marginBottom: '0.35rem', fontWeight: '500' }}>
+                            الدرجة الأعمال
+                          </div>
+                          <div style={{ fontSize: '10px', color: '#999', marginBottom: '0.4rem' }}>من</div>
+                          <div style={{ fontSize: '22px', fontWeight: 'bold', color: selectedTripId === trip.id && selectedClass === 'business' ? '#2b8a9d' : '#1a1a1a', lineHeight: '1' }}>
+                            {trip.businessPrice.toFixed(2).split('.')[0]}
+                            <span style={{ fontSize: '14px', fontWeight: 'normal' }}>.{trip.businessPrice.toFixed(2).split('.')[1]}</span>
+                            <span style={{ fontSize: '12px', fontWeight: 'normal', marginRight: '2px' }}>ر.س</span>
+                          </div>
+                        </div>
+
+                        <div
+                          onClick={() => {
+                            const isActive = selectedTripId === trip.id && selectedClass === 'economy'
+                            if (isActive) {
+                              setSelectedTripId(null)
+                              setSelectedClass(null)
+                            } else {
+                              setSelectedTripId(trip.id)
+                              setSelectedClass('economy')
+                            }
+                          }}
+                          style={{
+                            backgroundColor: selectedTripId === trip.id && selectedClass === 'economy' ? '#e8f5f7' : '#f5f5f5',
+                            border: selectedTripId === trip.id && selectedClass === 'economy' ? '2px solid #2b8a9d' : '1px solid #e0e0e0',
+                            borderRadius: '8px',
+                            padding: '1rem 1.25rem',
+                            textAlign: 'center',
+                            minWidth: '145px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            transform: selectedTripId === trip.id && selectedClass === 'economy' ? 'scale(1.02)' : 'scale(1)'
+                          }}
+                        >
+                          <div style={{ fontSize: '13px', color: '#666', marginBottom: '0.35rem', fontWeight: '500' }}>
+                            الدرجة الاقتصادية
+                          </div>
+                          <div style={{ fontSize: '10px', color: '#999', marginBottom: '0.4rem' }}>من</div>
+                          <div style={{ fontSize: '22px', fontWeight: 'bold', color: selectedTripId === trip.id && selectedClass === 'economy' ? '#2b8a9d' : '#1a1a1a', lineHeight: '1' }}>
+                            {trip.economyPrice.toFixed(2).split('.')[0]}
+                            <span style={{ fontSize: '14px', fontWeight: 'normal' }}>.{trip.economyPrice.toFixed(2).split('.')[1]}</span>
+                            <span style={{ fontSize: '12px', fontWeight: 'normal', marginRight: '2px' }}>ر.س</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '1.75rem', flex: 1 }}>
+                        <div style={{ textAlign: 'center', minWidth: '75px' }}>
+                          <div style={{ fontSize: '26px', fontWeight: 'bold', color: '#1a1a1a', marginBottom: '0.35rem' }}>
+                            {trip.departure}
+                          </div>
+                          <div style={{ fontSize: '13px', color: '#666' }}>{trip.departureStation}</div>
+                        </div>
+
+                        <div style={{ flex: 1, position: 'relative', paddingTop: '0.5rem', minWidth: '180px' }}>
+                          <div style={{
+                            height: '2px',
+                            backgroundColor: 'transparent',
+                            position: 'relative',
+                            backgroundImage: 'repeating-linear-gradient(to left, #2b8a9d 0, #2b8a9d 6px, transparent 6px, transparent 12px)'
+                          }}>
+                          </div>
+                          <div style={{
+                            position: 'absolute',
+                            top: '-8px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            textAlign: 'center',
+                            fontSize: '11px',
+                            color: '#2b8a9d',
+                            whiteSpace: 'nowrap',
+                            fontWeight: '500'
+                          }}>
+                            {trip.stops}
+                          </div>
+                        </div>
+
+                        <div style={{ textAlign: 'center', minWidth: '75px' }}>
+                          <div style={{ fontSize: '26px', fontWeight: 'bold', color: '#1a1a1a', marginBottom: '0.35rem' }}>
+                            {trip.arrival}
+                          </div>
+                          <div style={{ fontSize: '13px', color: '#666' }}>{trip.arrivalStation}</div>
+                        </div>
+                      </div>
+
+                      <div style={{ textAlign: 'center', minWidth: '70px' }}>
+                        <div style={{ fontSize: '30px', fontWeight: 'bold', color: '#1a1a1a', marginBottom: '0.35rem' }}>
+                          {trip.trainNumber}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#999' }}>رقم القطار</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{
+                    maxHeight: selectedTripId === trip.id ? '2000px' : '0',
+                    opacity: selectedTripId === trip.id ? 1 : 0,
+                    transform: selectedTripId === trip.id ? 'translateY(0)' : 'translateY(-8px)',
+                    transition: 'opacity 0.35s ease, max-height 0.5s ease, transform 0.35s ease',
+                    overflow: 'hidden'
+                  }}>
+                    {selectedTripId === trip.id && selectedClass === 'economy' && (
+                      <div className="fade-slide-in" style={{
+                        borderTop: '1px solid #e5e5e5',
+                        padding: '2rem',
+                        direction: 'rtl'
+                      }}>
+                        <div style={{
+                          marginBottom: '2rem',
+                          borderRadius: '12px',
+                          overflow: 'hidden',
+                          height: '250px'
+                        }}>
+                          <Image
+                            src="https://tickets.sar.com.sa/images/sub-classes/Economy-EAST%20TRAIN.png"
+                            alt="Train Interior"
+                            width={1200}
+                            height={250}
+                            unoptimized
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '1.5rem', justifyContent: 'space-between' }}>
+                          <div style={{
+                            flex: 1,
+                            backgroundColor: '#f9fafb',
+                            borderRadius: '12px',
+                            padding: '1.5rem',
+                            border: '1px solid #e5e5e5'
+                          }}>
+                            <h3 style={{
+                              fontSize: '20px',
+                              fontWeight: 'bold',
+                              color: '#2b8a9d',
+                              marginTop: 0,
+                              marginBottom: '0.5rem'
+                            }}>
+                              الاقتصادية التوفيرية
+                            </h3>
+                            <div style={{
+                              fontSize: '32px',
+                              fontWeight: 'bold',
+                              color: '#1a1a1a',
+                              marginBottom: '0.25rem'
+                            }}>
+                              {trip.economyPrice.toFixed(2).split('.')[0]}
+                              <span style={{ fontSize: '20px', fontWeight: 'normal' }}>.{trip.economyPrice.toFixed(2).split('.')[1]}</span>
+                              <span style={{ fontSize: '16px', fontWeight: 'normal', color: '#666' }}>ر.س</span>
+                            </div>
+                            <div style={{ fontSize: '13px', color: '#999', marginBottom: '1.5rem' }}>
+                              مجموع كل الركاب
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    الأمتعة المحمولة
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      مجاني
+                                    </span>
+                                  </div>
+                                  <div style={{ fontSize: '12px', color: '#666' }}>1 كجم 10 + 1 حقيبة متوسطة 25 كجم</div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2">
+                                  <line x1="18" y1="6" x2="6" y2="18" />
+                                  <line x1="6" y1="6" x2="18" y2="18" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333' }}>الأمتعة المشحونة</div>
+                                  <div style={{ fontSize: '12px', color: '#666' }}>غير متضمنة</div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2">
+                                  <line x1="18" y1="6" x2="6" y2="18" />
+                                  <line x1="6" y1="6" x2="18" y2="18" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333' }}>اختيار المقعد</div>
+                                  <div style={{ fontSize: '12px', color: '#666' }}>غير متضمن</div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    تغيير الحجز
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      رسوم 20%
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    إلغاء الحجز
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      رسوم 40%
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    عدم الحضور
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      رسوم 100%
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <button onClick={() => handleSelectPlan(trip, {
+                              classKey: 'economy',
+                              variantKey: 'saver',
+                              displayName: 'الاقتصادية التوفيرية',
+                              pricePerPassenger: trip.economyPrice,
+                              features: ['حقيبة يد 10كجم + متوسطة 25كجم', 'لا تشمل شحن', 'رسوم تغيير 20%', 'رسوم إلغاء 40%']
+                            })} style={{
+                              width: '100%',
+                              backgroundColor: '#2b8a9d',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '8px',
+                              padding: '0.875rem',
+                              fontSize: '15px',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              transition: 'background-color 0.2s'
+                            }}>
+                              اختيار
+                            </button>
+                          </div>
+
+                          <div style={{
+                            flex: 1,
+                            backgroundColor: '#f9fafb',
+                            borderRadius: '12px',
+                            padding: '1.5rem',
+                            border: '2px solid #2b8a9d'
+                          }}>
+                            <h3 style={{
+                              fontSize: '20px',
+                              fontWeight: 'bold',
+                              color: '#2b8a9d',
+                              marginTop: 0,
+                              marginBottom: '0.5rem'
+                            }}>
+                              الاقتصادية
+                            </h3>
+                            <div style={{
+                              fontSize: '32px',
+                              fontWeight: 'bold',
+                              color: '#1a1a1a',
+                              marginBottom: '0.25rem'
+                            }}>
+                              {trip.economySaver.toFixed(2).split('.')[0]}
+                              <span style={{ fontSize: '20px', fontWeight: 'normal' }}>.{trip.economySaver.toFixed(2).split('.')[1]}</span>
+                              <span style={{ fontSize: '16px', fontWeight: 'normal', color: '#666' }}>ر.س</span>
+                            </div>
+                            <div style={{ fontSize: '13px', color: '#999', marginBottom: '1.5rem' }}>
+                              مجموع كل الركاب
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    الأمتعة المحمولة
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      مجاني
+                                    </span>
+                                  </div>
+                                  <div style={{ fontSize: '12px', color: '#666' }}>1 حقيبة يد 10 كجم + 1 حقيبة متوسطة 25 كجم</div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    الأمتعة المشحونة
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      مجاني
+                                    </span>
+                                  </div>
+                                  <div style={{ fontSize: '12px', color: '#666' }}>2 حقيبة كبيرة 25 كجم لكل حقيبة</div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    اختيار المقعد
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      مجاني
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    تغيير الحجز
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      مجاني
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    إلغاء الحجز
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      مجاني
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    عدم الحضور
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      رسوم 50%
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <button onClick={() => handleSelectPlan(trip, {
+                              classKey: 'economy',
+                              variantKey: 'standard',
+                              displayName: 'الاقتصادية',
+                              pricePerPassenger: trip.economySaver,
+                              features: ['حقيبة يد 10كجم + متوسطة 25كجم', 'شحن مجاني حقيبتين 25كجم', 'اختيار مقعد مجاني', 'تغيير/إلغاء مجاني']
+                            })} style={{
+                              width: '100%',
+                              backgroundColor: '#2b8a9d',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '8px',
+                              padding: '0.875rem',
+                              fontSize: '15px',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              transition: 'background-color 0.2s'
+                            }}>
+                              اختيار
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+
+                    {selectedTripId === trip.id && selectedClass === 'business' && (
+                      <div className="fade-slide-in" style={{
+                        borderTop: '1px solid #e5e5e5',
+                        padding: '2rem',
+                        direction: 'rtl'
+                      }}>
+                        <div style={{
+                          marginBottom: '2rem',
+                          borderRadius: '12px',
+                          overflow: 'hidden',
+                          height: '250px'
+                        }}>
+                          <Image
+                            src="https://tickets.sar.com.sa/images/sub-classes/Business-EAST%20TRAIN.png"
+                            alt="Business Class"
+                            width={1200}
+                            height={250}
+                            unoptimized
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '1.5rem', justifyContent: 'space-between' }}>
+                          <div style={{
+                            flex: 1,
+                            backgroundColor: '#f9fafb',
+                            borderRadius: '12px',
+                            padding: '1.5rem',
+                            border: '1px solid #e5e5e5'
+                          }}>
+                            <h3 style={{
+                              fontSize: '20px',
+                              fontWeight: 'bold',
+                              color: '#2b8a9d',
+                              marginTop: 0,
+                              marginBottom: '0.5rem'
+                            }}>
+                              الأعمال
+                            </h3>
+                            <div style={{
+                              fontSize: '32px',
+                              fontWeight: 'bold',
+                              color: '#1a1a1a',
+                              marginBottom: '0.25rem'
+                            }}>
+                              {trip.businessPrice.toFixed(2).split('.')[0]}
+                              <span style={{ fontSize: '20px', fontWeight: 'normal' }}>.{trip.businessPrice.toFixed(2).split('.')[1]}</span>
+                              <span style={{ fontSize: '16px', fontWeight: 'normal', color: '#666' }}>ر.س</span>
+                            </div>
+                            <div style={{ fontSize: '13px', color: '#999', marginBottom: '1.5rem' }}>
+                              مجموع كل الركاب
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    الأمتعة المحمولة
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      مجاني
+                                    </span>
+                                  </div>
+                                  <div style={{ fontSize: '12px', color: '#666' }}>1 حقيبة يد 10 كجم + 1 حقيبة متوسطة 25 كجم</div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    الأمتعة المشحونة
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      مجاني
+                                    </span>
+                                  </div>
+                                  <div style={{ fontSize: '12px', color: '#666' }}>1 حقيبة كبيرة 32 كجم</div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    اختيار المقعد
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      مجاني
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    تغيير الحجز
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      مجاني
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    إلغاء الحجز
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      مجاني
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    عدم الحضور
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      رسوم 30%
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <button onClick={() => handleSelectPlan(trip, {
+                              classKey: 'business',
+                              variantKey: 'standard',
+                              displayName: 'الأعمال',
+                              pricePerPassenger: trip.businessPrice,
+                              features: ['حقيبة يد 10كجم + متوسطة 25كجم', 'شحن مجاني 32كجم', 'اختيار مقعد مجاني', 'تغيير/إلغاء مجاني']
+                            })} style={{
+                              width: '100%',
+                              backgroundColor: '#2b8a9d',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '8px',
+                              padding: '0.875rem',
+                              fontSize: '15px',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              transition: 'background-color 0.2s'
+                            }}>
+                              اختيار
+                            </button>
+                          </div>
+
+                          <div style={{
+                            flex: 1,
+                            backgroundColor: '#f9fafb',
+                            borderRadius: '12px',
+                            padding: '1.5rem',
+                            border: '2px solid #2b8a9d'
+                          }}>
+                            <h3 style={{
+                              fontSize: '20px',
+                              fontWeight: 'bold',
+                              color: '#2b8a9d',
+                              marginTop: 0,
+                              marginBottom: '0.5rem'
+                            }}>
+                              الأعمال المميزة
+                            </h3>
+                            <div style={{
+                              fontSize: '32px',
+                              fontWeight: 'bold',
+                              color: '#1a1a1a',
+                              marginBottom: '0.25rem'
+                            }}>
+                              {(trip.businessPrice + 60).toFixed(2).split('.')[0]}
+                              <span style={{ fontSize: '20px', fontWeight: 'normal' }}>.{(trip.businessPrice + 60).toFixed(2).split('.')[1]}</span>
+                              <span style={{ fontSize: '16px', fontWeight: 'normal', color: '#666' }}>ر.س</span>
+                            </div>
+                            <div style={{ fontSize: '13px', color: '#999', marginBottom: '1.5rem' }}>
+                              مجموع كل الركاب
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    الأمتعة المحمولة
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      مجاني
+                                    </span>
+                                  </div>
+                                  <div style={{ fontSize: '12px', color: '#666' }}>1 حقيبة يد 10 كجم + 1 حقيبة متوسطة 25 كجم</div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    الأمتعة المشحونة
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      مجاني
+                                    </span>
+                                  </div>
+                                  <div style={{ fontSize: '12px', color: '#666' }}>2 حقيبة كبيرة 32 كجم لكل حقيبة</div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    اختيار المقعد
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      مجاني
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    تغيير الحجز
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      مجاني
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    إلغاء الحجز
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      مجاني
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2b8a9d" strokeWidth="2">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    عدم الحضور
+                                    <span style={{ fontSize: '12px', color: '#2b8a9d', fontWeight: 'normal' }}>
+                                      رسوم 15%
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <button onClick={() => handleSelectPlan(trip, {
+                              classKey: 'business',
+                              variantKey: 'premium',
+                              displayName: 'الأعمال المميزة',
+                              pricePerPassenger: trip.businessPrice + 60,
+                              features: ['حقيبة يد 10كجم + متوسطة 25كجم', 'شحن مجاني حقيبتين 32كجم', 'اختيار مقعد مجاني', 'تغيير/إلغاء مجاني']
+                            })} style={{
+                              width: '100%',
+                              backgroundColor: '#2b8a9d',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '8px',
+                              padding: '0.875rem',
+                              fontSize: '15px',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              transition: 'background-color 0.2s'
+                            }}>
+                              اختيار
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      {showPassengerDetails && (
+  <div
+    style={{
+      maxWidth: "1400px",
+      margin: "0 auto",
+      padding: "0 3rem 3rem",
+    }}
+  >
+    <div
+      style={{
+        backgroundColor: "#ffffff",
+        borderRadius: "12px",
+        padding: "2rem",
+        boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+        marginTop: "1.5rem",
+        direction: "rtl",
+        border: "1px solid #e5e7eb",
+      }}
+    >
+      <h3 style={{ marginTop: 0, color: "#111827", fontWeight: 700, fontSize: "20px" }}>
+        تفاصيل الركاب
+      </h3>
+
+      {/* بلوك تفاصيل الراكب */}
+      <div
+        style={{
+          background: "#F7F9FC",
+          border: "1px solid #E1E5EB",
+          borderRadius: "14px",
+          padding: "1.5rem",
+          marginTop: "1.2rem",
+        }}
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            gap: "20px",
+          }}
+        >
+          {/* اللقب */}
+          <div>
+            <label
+              style={{ fontSize: "13px", marginBottom: "6px", color: "#4B5563", display: "block" }}
+            >
+              اللقب
+            </label>
+            <select
+              style={{
+                padding: "12px",
+                border: errors.title ? "1px solid #DC2626" : "1px solid #D1D5DB",
+                borderRadius: "10px",
+                width: "100%",
+                background: "white",
+              }}
+              value={form.title}
+              onChange={(e) => updateField('title', e.target.value)}
+            >
+              <option>السيد</option>
+              <option>السيدة</option>
+              <option>الآنسة</option>
+            </select>
+          </div>
+
+          {/* الاسم الأول */}
+          <div>
+            <label
+              style={{ fontSize: "13px", marginBottom: "6px", color: "#4B5563", display: "block" }}
+            >
+              الاسم الأول
+            </label>
+            <input
+              placeholder="الاسم الأول"
+              style={{
+                padding: "12px",
+                border: errors.firstName ? "1px solid #DC2626" : "1px solid #D1D5DB",
+                borderRadius: "10px",
+                width: "100%",
+              }}
+              value={form.firstName}
+              onChange={(e) => updateField('firstName', e.target.value)}
+            />
+            {errors.firstName && <div style={{ color: '#DC2626', fontSize: 12, marginTop: 6 }}>{errors.firstName}</div>}
+          </div>
+
+          {/* اسم العائلة */}
+          <div>
+            <label
+              style={{ fontSize: "13px", marginBottom: "6px", color: "#4B5563", display: "block" }}
+            >
+              اسم العائلة
+            </label>
+            <input
+              placeholder="اسم العائلة"
+              style={{
+                padding: "12px",
+                border: errors.lastName ? "1px solid #DC2626" : "1px solid #D1D5DB",
+                borderRadius: "10px",
+                width: "100%",
+              }}
+              value={form.lastName}
+              onChange={(e) => updateField('lastName', e.target.value)}
+            />
+            {errors.lastName && <div style={{ color: '#DC2626', fontSize: 12, marginTop: 6 }}>{errors.lastName}</div>}
+          </div>
+
+          {/* نوع الوثيقة */}
+          <div>
+            <label
+              style={{ fontSize: "13px", marginBottom: "6px", color: "#4B5563", display: "block" }}
+            >
+              نوع الوثيقة
+            </label>
+            <select
+              style={{
+                padding: "12px",
+                border: errors.docType ? "1px solid #DC2626" : "1px solid #D1D5DB",
+                borderRadius: "10px",
+                width: "100%",
+                background: "white",
+              }}
+              value={form.docType}
+              onChange={(e) => updateField('docType', e.target.value)}
+            >
+              <option>الهوية الوطنية</option>
+              <option>جواز سفر</option>
+            </select>
+          </div>
+
+          {/* رقم الوثيقة */}
+          <div>
+            <label
+              style={{ fontSize: "13px", marginBottom: "6px", color: "#4B5563", display: "block" }}
+            >
+              رقم الوثيقة
+            </label>
+            <input
+              placeholder="رقم الوثيقة"
+              style={{
+                padding: "12px",
+                border: errors.docNumber ? "1px solid #DC2626" : "1px solid #D1D5DB",
+                borderRadius: "10px",
+                width: "100%",
+              }}
+              value={form.docNumber}
+              onChange={(e) => updateField('docNumber', e.target.value)}
+            />
+            {errors.docNumber && <div style={{ color: '#DC2626', fontSize: 12, marginTop: 6 }}>{errors.docNumber}</div>}
+          </div>
+
+          {/* تاريخ الميلاد */}
+          <div>
+            <label
+              style={{ fontSize: "13px", marginBottom: "6px", color: "#4B5563", display: "block" }}
+            >
+              تاريخ الميلاد
+            </label>
+            <input
+              type="date"
+              lang="en-GB"
+              dir="ltr"
+              placeholder="DD-MM-YYYY"
+              style={{
+                padding: "12px",
+                border: errors.dob ? "1px solid #DC2626" : "1px solid #D1D5DB",
+                borderRadius: "10px",
+                width: "100%",
+              }}
+              value={form.dob}
+              onChange={(e) => updateField('dob', e.target.value)}
+              max={new Date().toISOString().split('T')[0]}
+            />
+            {errors.dob && <div style={{ color: '#DC2626', fontSize: 12, marginTop: 6 }}>{errors.dob}</div>}
+          </div>
         </div>
       </div>
+
+      {/* بيانات الاتصال */}
+      <h4
+        style={{
+          marginTop: "2.2rem",
+          color: "#111827",
+          fontWeight: 700,
+          fontSize: "18px",
+        }}
+      >
+        بيانات الإتصال
+      </h4>
+
+      <div
+        style={{
+          background: "#F7F9FC",
+          border: "1px solid #E1E5EB",
+          borderRadius: "14px",
+          padding: "1.5rem",
+          marginTop: "1rem",
+        }}
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "20px",
+          }}
+        >
+          {/* رقم الجوال */}
+          <div>
+            <label
+              style={{ fontSize: "13px", marginBottom: "6px", color: "#4B5563", display: "block" }}
+            >
+              رقم الجوال
+            </label>
+            <input
+              placeholder="رقم الجوال"
+              style={{
+                padding: "12px",
+                border: errors.phone ? "1px solid #DC2626" : "1px solid #D1D5DB",
+                borderRadius: "10px",
+                width: "100%",
+              }}
+              value={form.phone}
+              onChange={(e) => updateField('phone', e.target.value)}
+            />
+            {errors.phone && <div style={{ color: '#DC2626', fontSize: 12, marginTop: 6 }}>{errors.phone}</div>}
+          </div>
+
+          {/* البريد */}
+          <div>
+            <label
+              style={{ fontSize: "13px", marginBottom: "6px", color: "#4B5563", display: "block" }}
+            >
+              البريد الإلكتروني
+            </label>
+            <input
+              placeholder="example@mail.com"
+              style={{
+                padding: "12px",
+                border: errors.email ? "1px solid #DC2626" : "1px solid #D1D5DB",
+                borderRadius: "10px",
+                width: "100%",
+              }}
+              value={form.email}
+              onChange={(e) => updateField('email', e.target.value)}
+            />
+            {errors.email && <div style={{ color: '#DC2626', fontSize: 12, marginTop: 6 }}>{errors.email}</div>}
+          </div>
+        </div>
+      </div>
+
+      {/* Buttons */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          marginTop: "2rem",
+        }}
+      >
+        <button
+          style={{
+            background: "#E8F5F7",
+            color: "#2B8A9D",
+            border: "1px solid #CDE7EB",
+            padding: "12px 24px",
+            borderRadius: "10px",
+            cursor: "pointer",
+            fontWeight: 600,
+          }}
+          onClick={() => setShowPassengerDetails(false)}
+        >
+          رجوع
+        </button>
+
+        <button
+          style={{
+            background: "#2B8A9D",
+            color: "white",
+            border: "none",
+            padding: "12px 24px",
+            borderRadius: "10px",
+            cursor: "pointer",
+            fontWeight: 600,
+          }}
+          onClick={() => {
+            if (!validateForm()) return
+            try {
+              const passenger = {
+                title: form.title,
+                firstName: form.firstName,
+                lastName: form.lastName,
+                docType: form.docType,
+                docNumber: form.docNumber,
+                dob: form.dob,
+                phone: form.phone,
+                email: form.email,
+              }
+              window.localStorage.setItem('passengerInfo', JSON.stringify(passenger))
+              // move to extras stage
+              setShowPassengerDetails(false)
+              setShowExtras(true)
+              window.localStorage.setItem('selectedExtras', JSON.stringify({ ...extras }))
+            } catch {
+              // ignore
+            }
+          }}
+        >
+          متابعة
+        </button>
+      </div>
+    </div>
+    </div>
+)}
+
+      {showExtras && (
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '0 3rem 3rem' }}>
+          <div style={{ background: 'white', borderRadius: 8, padding: '1.5rem 2rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', direction: 'rtl' }}>
+            <h3 style={{ marginTop: 0, color: '#1a1a1a' }}>الخدمات الإضافية</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1rem' }}>
+              <button
+                onClick={() => {
+                  const next = { ...extras, meal: !extras.meal }
+                  setExtras(next)
+                  window.localStorage.setItem('selectedExtras', JSON.stringify(next))
+                }}
+                style={{
+                  textAlign: 'right',
+                  padding: '1.25rem',
+                  borderRadius: 12,
+                  border: extras.meal ? '2px solid #2b8a9d' : '1px solid #e5e5e5',
+                  background: extras.meal ? '#e8f5f7' : '#fff',
+                  cursor: 'pointer'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                  <span style={{ fontWeight: 600, color: '#1a1a1a' }}>الوجبة</span>
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#1f2937" strokeWidth="1.5">
+                    <path d="M4 11h16a6 6 0 0 1-12 0z" fill="#1f2937" stroke="none" />
+                    <line x1="15" y1="3" x2="21" y2="9" stroke="#1f2937" strokeWidth="1.5" />
+                    <line x1="13.5" y1="4" x2="19.5" y2="10" stroke="#1f2937" strokeWidth="1.5" />
+                  </svg>
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  const next = { ...extras, baggage: !extras.baggage }
+                  setExtras(next)
+                  window.localStorage.setItem('selectedExtras', JSON.stringify(next))
+                }}
+                style={{
+                  textAlign: 'right',
+                  padding: '1.25rem',
+                  borderRadius: 12,
+                  border: extras.baggage ? '2px solid #2b8a9d' : '1px solid #e5e5e5',
+                  background: extras.baggage ? '#e8f5f7' : '#fff',
+                  cursor: 'pointer'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                  <span style={{ fontWeight: 600, color: '#1a1a1a' }}>أمتعة السفر</span>
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#1f2937" strokeWidth="1.5">
+                    <rect x="6" y="7" width="12" height="12" rx="2" fill="#1f2937" stroke="none" />
+                    <rect x="9" y="5" width="6" height="2" rx="1" fill="#1f2937" stroke="none" />
+                  </svg>
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  const next = { ...extras, seat: !extras.seat }
+                  setExtras(next)
+                  window.localStorage.setItem('selectedExtras', JSON.stringify(next))
+                }}
+                style={{
+                  textAlign: 'right',
+                  padding: '1.25rem',
+                  borderRadius: 12,
+                  border: extras.seat ? '2px solid #2b8a9d' : '1px solid #e5e5e5',
+                  background: extras.seat ? '#e8f5f7' : '#fff',
+                  cursor: 'pointer'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                  <span style={{ fontWeight: 600, color: '#1a1a1a' }}>اختيار المقعد</span>
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#1f2937" strokeWidth="1.5">
+                    <path d="M8 5a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0" fill="#1f2937" stroke="none" />
+                    <path d="M6 12h6a2 2 0 0 1 2 2v4H7a2 2 0 0 1-2-2v-4z" fill="#1f2937" stroke="none" />
+                    <rect x="14" y="13" width="4" height="7" rx="1" fill="#1f2937" stroke="none" />
+                  </svg>
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  const next = { ...extras, lounge: !extras.lounge }
+                  setExtras(next)
+                  window.localStorage.setItem('selectedExtras', JSON.stringify(next))
+                }}
+                style={{
+                  textAlign: 'right',
+                  padding: '1.25rem',
+                  borderRadius: 12,
+                  border: extras.lounge ? '2px solid #2b8a9d' : '1px solid #e5e5e5',
+                  background: extras.lounge ? '#e8f5f7' : '#fff',
+                  cursor: 'pointer'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                  <span style={{ fontWeight: 600, color: '#1a1a1a' }}>صالة الأعمال</span>
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#1f2937" strokeWidth="1.5">
+                    <rect x="4" y="15" width="16" height="2" fill="#1f2937" stroke="none" />
+                    <rect x="7" y="11" width="4" height="3" rx="1" fill="#1f2937" stroke="none" />
+                    <path d="M15 11h4l-1 3h-3z" fill="#1f2937" stroke="none" />
+                    <rect x="6" y="17" width="2" height="2" rx="1" fill="#1f2937" stroke="none" />
+                    <rect x="16" y="17" width="2" height="2" rx="1" fill="#1f2937" stroke="none" />
+                  </svg>
+                </div>
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1.5rem' }}>
+              <button
+                style={{ background: '#e8f5f7', color: '#2b8a9d', border: '1px solid #d0e8ec', padding: '10px 16px', borderRadius: 8, cursor: 'pointer' }}
+                onClick={() => {
+                  setShowExtras(false)
+                  setShowPassengerDetails(true)
+                }}
+              >
+                رجوع
+              </button>
+              <button
+                style={{ background: '#2b8a9d', color: 'white', border: 'none', padding: '10px 16px', borderRadius: 8, cursor: 'pointer' }}
+                onClick={() => {
+                  // persist and proceed
+                  window.localStorage.setItem('selectedExtras', JSON.stringify(extras))
+                  setShowExtras(false)
+                  setShowPayment(true)
+                }}
+              >
+                متابعة
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPayment && (
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '0 3rem 3rem' }}>
+          <div style={{ background: 'white', borderRadius: 12, padding: '2rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', direction: 'rtl', border: '1px solid #e5e7eb', marginTop: '1.5rem' }}>
+            <h3 style={{ marginTop: 0, color: '#111827', fontWeight: 700, fontSize: 20 }}>بيانات الدفع</h3>
+
+            <div style={{ marginTop: '1rem', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
+              <div style={{ padding: '1rem 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f9fafb' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#1f2937', fontWeight: 600 }}>
+                  <span>المبلغ المستحق</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.25rem', color: '#1a1a1a', fontWeight: 'bold', fontSize: 24 }}>
+                  <span style={{ fontSize: 14, fontWeight: 400, color: '#666' }}>ر.س</span>
+                  <span style={{ fontSize: 16, fontWeight: 400, color: '#999' }}>{(selectedPlanPrice + extrasTotal).toFixed(2).split('.')[1]}</span>
+                  <span>{(selectedPlanPrice + extrasTotal).toFixed(2).split('.')[0]}</span>
+                </div>
+              </div>
+
+              <div style={{ padding: '1.25rem', background: 'white' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.75rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 6 }}>مالك البطاقة</label>
+                    <input
+                      placeholder="الاسم كما يظهر على البطاقة"
+                      style={{ width: '100%', padding: '12px', borderRadius: 10, border: paymentErrors.cardName ? '1px solid #dc2626' : '1px solid #d1d5db' }}
+                      value={paymentForm.cardName}
+                      onChange={(e) => updatePaymentField('cardName', e.target.value)}
+                    />
+                    {paymentErrors.cardName && <div style={{ color: '#dc2626', fontSize: 12, marginTop: 4 }}>{paymentErrors.cardName}</div>}
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 6 }}>رقم البطاقة</label>
+                    <input
+                      placeholder="0000 0000 0000 0000"
+                      style={{ width: '100%', padding: '12px', borderRadius: 10, border: paymentErrors.cardNumber ? '1px solid #dc2626' : '1px solid #d1d5db', direction: 'ltr' }}
+                      value={paymentForm.cardNumber}
+                      onChange={(e) => updatePaymentField('cardNumber', e.target.value)}
+                    />
+                    {paymentErrors.cardNumber && <div style={{ color: '#dc2626', fontSize: 12, marginTop: 4 }}>{paymentErrors.cardNumber}</div>}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 6 }}>الشهر</label>
+                      <input
+                        placeholder="MM"
+                        style={{ width: '100%', padding: '12px', borderRadius: 10, border: paymentErrors.expMonth ? '1px solid #dc2626' : '1px solid #d1d5db', direction: 'ltr' }}
+                        value={paymentForm.expMonth}
+                        onChange={(e) => updatePaymentField('expMonth', e.target.value)}
+                      />
+                      {paymentErrors.expMonth && <div style={{ color: '#dc2626', fontSize: 12, marginTop: 4 }}>{paymentErrors.expMonth}</div>}
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 6 }}>السنة</label>
+                      <input
+                        placeholder="YY"
+                        style={{ width: '100%', padding: '12px', borderRadius: 10, border: paymentErrors.expYear ? '1px solid #dc2626' : '1px solid #d1d5db', direction: 'ltr' }}
+                        value={paymentForm.expYear}
+                        onChange={(e) => updatePaymentField('expYear', e.target.value)}
+                      />
+                      {paymentErrors.expYear && <div style={{ color: '#dc2626', fontSize: 12, marginTop: 4 }}>{paymentErrors.expYear}</div>}
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 6 }}>رمز التحقق</label>
+                      <input
+                        placeholder="CVV"
+                        style={{ width: '100%', padding: '12px', borderRadius: 10, border: paymentErrors.cvv ? '1px solid #dc2626' : '1px solid #d1d5db', direction: 'ltr' }}
+                        value={paymentForm.cvv}
+                        onChange={(e) => updatePaymentField('cvv', e.target.value)}
+                      />
+                      {paymentErrors.cvv && <div style={{ color: '#dc2626', fontSize: 12, marginTop: 4 }}>{paymentErrors.cvv}</div>}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1.25rem' }}>
+                  <button
+                    style={{ background: '#e8f5f7', color: '#2b8a9d', border: '1px solid #d0e8ec', padding: '10px 16px', borderRadius: 8, cursor: isPaying ? 'default' : 'pointer', opacity: isPaying ? 0.7 : 1 }}
+                    onClick={() => {
+                      if (isPaying) return
+                      setShowPayment(false)
+                      setShowExtras(true)
+                    }}
+                  >
+                    رجوع
+                  </button>
+                  <button
+                    style={{ background: '#2b8a9d', color: 'white', border: 'none', padding: '10px 16px', borderRadius: 8, cursor: isPaying ? 'default' : 'pointer', minWidth: 160, opacity: isPaying ? 0.7 : 1 }}
+                    onClick={() => {
+                      if (isPaying) return
+                      if (!validatePaymentForm()) return
+                      setIsPaying(true)
+                      setTimeout(() => {
+                        router.push('/payment-success')
+                      }, 3000)
+                    }}
+                  >
+                    {isPaying ? 'جاري معالجة الدفع...' : `الدفع [${(selectedPlanPrice + extrasTotal).toFixed(2)}]`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
