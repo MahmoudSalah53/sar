@@ -1,291 +1,842 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 
-const stations = {
-  'الهفوف': 'HAF',
-  'الدمام': 'DMM',
-  'الرياض': 'RUH',
-  'القصيم': 'QSM',
-  'حائل': 'HAI',
+// بيانات المحطات
+const stations = [
+  { name: 'الرياض', code: 'RYD' },
+  { name: 'الهفوف', code: 'HAF' },
+  { name: 'بقيق', code: 'ABQ' },
+  { name: 'الدمام', code: 'DMM' },
+  { name: 'المجمعة', code: 'MAJ' },
+  { name: 'القصيم', code: 'QSM' },
+  { name: 'حائل', code: 'HAI' },
+  { name: 'الجوف', code: 'JAU' },
+  { name: 'القريات', code: 'QUR' }
+]
+
+// خريطة المسارات المتاحة (من أي محطة يمكن الوصول إلى أي محطات)
+const availableRoutes: { [key: string]: string[] } = {
+  'الرياض': ['الدمام', 'القصيم', 'حائل', 'الجوف', 'القريات', 'المجمعة'],
+  'الهفوف': ['الرياض', 'الدمام', 'بقيق'],
+  'بقيق': ['الرياض', 'الدمام', 'الهفوف'],
+  'الدمام': ['الرياض', 'الهفوف', 'بقيق', 'القصيم'],
+  'المجمعة': ['الرياض', 'القصيم'],
+  'القصيم': ['الرياض', 'الدمام', 'حائل', 'المجمعة'],
+  'حائل': ['الرياض', 'القصيم', 'الجوف'],
+  'الجوف': ['الرياض', 'حائل', 'القريات'],
+  'القريات': ['الرياض', 'الجوف']
 }
 
-const trips = [
-  { id: 1, departure: '17:41', arrival: '19:20', duration: '1 توقف', durationMinutes: '39 د', price: 55, class: 'اقتصادية', businessPrice: 95 },
-  { id: 2, departure: '15:30', arrival: '17:10', duration: '1 توقف', durationMinutes: '40 د', price: 55, class: 'اقتصادية', businessPrice: 95 },
-  { id: 3, departure: '12:20', arrival: '14:05', duration: '1 توقف', durationMinutes: '45 د', price: 55, class: 'اقتصادية', businessPrice: 95 },
-]
+export default function BookingSection() {
+  const [fromStation, setFromStation] = useState<string>('')
+  const [toStation, setToStation] = useState<string>('')
+  const [showFromDropdown, setShowFromDropdown] = useState(false)
+  const [showToDropdown, setShowToDropdown] = useState(false)
+  const [showDateDropdown, setShowDateDropdown] = useState(false)
+  const [tripType, setTripType] = useState<'one-way' | 'round-trip'>('one-way')
+  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date(2025, 10, 16)) // نوفمبر 16, 2025
+  const [selectedReturnDate, setSelectedReturnDate] = useState<Date | null>(null)
+  const [currentMonth, setCurrentMonth] = useState(new Date(2025, 10, 1)) // نوفمبر 2025
+  const [currentReturnMonth, setCurrentReturnMonth] = useState(new Date(2025, 11, 1)) // ديسمبر 2025
+  const [showPassengersDropdown, setShowPassengersDropdown] = useState(false)
+  const [adults, setAdults] = useState(1)
+  const [children, setChildren] = useState(0)
+  const [infants, setInfants] = useState(0)
+  const fromDropdownRef = useRef<HTMLDivElement>(null)
+  const dateDropdownRef = useRef<HTMLDivElement>(null)
+  const passengersDropdownRef = useRef<HTMLDivElement>(null)
+  const fromButtonRef = useRef<HTMLDivElement>(null)
+  const dateButtonRef = useRef<HTMLDivElement>(null)
+  const passengersButtonRef = useRef<HTMLDivElement>(null)
 
-const dates = [
-  { day: '13', dayName: 'الخميس', date: 'نوفمبر 2025', isActive: true },
-  { day: '14', dayName: 'الجمعة', date: 'نوفمبر 2025', isActive: false },
-  { day: '15', dayName: 'السبت', date: 'نوفمبر 2025', isActive: false },
-  { day: '16', dayName: 'الأحد', date: 'نوفمبر 2025', isActive: false },
-  { day: '17', dayName: 'الاثنين', date: 'نوفمبر 2025', isActive: false },
-  { day: '18', dayName: 'الثلاثاء', date: 'نوفمبر 2025', isActive: false },
-]
+  // الحصول على المحطات المتاحة للوصول بناءً على محطة المغادرة
+  const getAvailableToStations = () => {
+    if (!fromStation) return stations
+    return stations.filter(station =>
+      availableRoutes[fromStation]?.includes(station.name)
+    )
+  }
 
-export default function SARBooking() {
-  const [activeTab, setActiveTab] = useState(0)
-  const [selectedTrip, setSelectedTrip] = useState<number | null>(null)
+  // إغلاق الـ dropdown عند النقر خارجها
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        fromDropdownRef.current &&
+        !fromDropdownRef.current.contains(event.target as Node) &&
+        fromButtonRef.current &&
+        !fromButtonRef.current.contains(event.target as Node)
+      ) {
+        setShowFromDropdown(false)
+        setShowToDropdown(false)
+      }
+      if (
+        dateDropdownRef.current &&
+        !dateDropdownRef.current.contains(event.target as Node) &&
+        dateButtonRef.current &&
+        !dateButtonRef.current.contains(event.target as Node)
+      ) {
+        setShowDateDropdown(false)
+      }
+      if (
+        passengersDropdownRef.current &&
+        !passengersDropdownRef.current.contains(event.target as Node) &&
+        passengersButtonRef.current &&
+        !passengersButtonRef.current.contains(event.target as Node)
+      ) {
+        setShowPassengersDropdown(false)
+      }
+    }
 
-  const tabs = ['اختيار الرحلة', 'تفاصيل الركاب', 'المقاعد والخدمات الإضافية', 'الدفع']
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [])
+
+  // عند اختيار محطة المغادرة
+  const handleFromStationSelect = (stationName: string) => {
+    setFromStation(stationName)
+    setToStation('') // إعادة تعيين محطة الوصول
+  }
+
+  const handleToStationSelect = (stationName: string) => {
+    setToStation(stationName)
+    // إغلاق الـ dropdown بعد اختيار محطة الوصول
+    setShowFromDropdown(false)
+    setShowToDropdown(false)
+  }
+
+  // دوال التقويم
+  const arabicMonths = [
+    'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+    'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+  ]
+
+  const arabicDays = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
+  const arabicDaysShort = ['ح', 'ن', 'ث', 'ر', 'خ', 'ج', 'س']
+
+  const formatDate = (date: Date | null): string => {
+    if (!date) return '11 نوفمبر 2025'
+    const day = date.getDate()
+    const month = arabicMonths[date.getMonth()]
+    const year = date.getFullYear()
+    return `${day} ${month} ${year}`
+  }
+
+  const formatDateRange = (): string => {
+    if (tripType === 'one-way') {
+      return formatDate(selectedDate)
+    } else {
+      if (selectedDate && selectedReturnDate) {
+        return `${formatDate(selectedDate)} - ${formatDate(selectedReturnDate)}`
+      } else if (selectedDate) {
+        return `${formatDate(selectedDate)} - حدد تاريخ العودة`
+      } else {
+        return 'حدد تاريخ السفر'
+      }
+    }
+  }
+
+  const getDaysInMonth = (date: Date) => {
+    const year = date.getFullYear()
+    const month = date.getMonth()
+    const firstDay = new Date(year, month, 1)
+    const lastDay = new Date(year, month + 1, 0)
+    const daysInMonth = lastDay.getDate()
+    let startingDayOfWeek = firstDay.getDay() // 0 = Sunday, 6 = Saturday
+    // تحويل إلى RTL: الأحد = 0 (أول يوم في الأسبوع)
+    
+    const days = []
+    
+    // أيام الشهر السابق
+    const prevMonth = new Date(year, month, 0)
+    const prevMonthDays = prevMonth.getDate()
+    for (let i = startingDayOfWeek - 1; i >= 0; i--) {
+      days.push({ day: prevMonthDays - i, isCurrentMonth: false, date: new Date(year, month - 1, prevMonthDays - i) })
+    }
+    
+    // أيام الشهر الحالي
+    for (let i = 1; i <= daysInMonth; i++) {
+      days.push({ day: i, isCurrentMonth: true, date: new Date(year, month, i) })
+    }
+    
+    // أيام الشهر التالي
+    const remainingDays = 42 - days.length // 6 rows × 7 days
+    for (let i = 1; i <= remainingDays; i++) {
+      days.push({ day: i, isCurrentMonth: false, date: new Date(year, month + 1, i) })
+    }
+    
+    return days
+  }
+
+  const handleDateSelect = (date: Date, isReturnDate: boolean = false) => {
+    if (tripType === 'one-way') {
+      setSelectedDate(date)
+      setShowDateDropdown(false)
+    } else {
+      if (isReturnDate) {
+        // إذا كان تاريخ العودة يجب أن يكون بعد تاريخ الذهاب
+        if (selectedDate && date >= selectedDate) {
+          setSelectedReturnDate(date)
+        } else if (!selectedDate) {
+          // إذا لم يتم اختيار تاريخ الذهاب بعد، اجعله تاريخ الذهاب
+          setSelectedDate(date)
+        }
+      } else {
+        // اختيار تاريخ الذهاب
+        setSelectedDate(date)
+        // إذا كان تاريخ العودة قبل تاريخ الذهاب الجديد، امسحه
+        if (selectedReturnDate && selectedReturnDate < date) {
+          setSelectedReturnDate(null)
+        }
+      }
+    }
+  }
+
+  const handlePrevMonth = () => {
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))
+  }
+
+  const handleNextMonth = () => {
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))
+  }
+
+  const isSameDay = (date1: Date | null, date2: Date): boolean => {
+    if (!date1) return false
+    return date1.getDate() === date2.getDate() &&
+           date1.getMonth() === date2.getMonth() &&
+           date1.getFullYear() === date2.getFullYear()
+  }
+
+  const isInRange = (date: Date): boolean => {
+    if (tripType !== 'round-trip' || !selectedDate || !selectedReturnDate) return false
+    return date >= selectedDate && date <= selectedReturnDate
+  }
+
+  const isDateDisabled = (date: Date, isReturnDate: boolean = false): boolean => {
+    if (tripType === 'round-trip' && isReturnDate && selectedDate) {
+      // عند اختيار تاريخ العودة، لا يمكن اختيار تاريخ قبل تاريخ الذهاب
+      return date < selectedDate
+    }
+    return false
+  }
+
+  const isPastDate = (date: Date): boolean => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return date < today
+  }
+
+  const availableToStations = getAvailableToStations()
+  const showDropdown = showFromDropdown || showToDropdown
+
+  // التقويمات
+  const firstMonth = tripType === 'round-trip' ? currentMonth : currentMonth
+  const secondMonth = tripType === 'round-trip' 
+    ? currentReturnMonth 
+    : new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1)
+  const firstMonthDays = getDaysInMonth(firstMonth)
+  const secondMonthDays = getDaysInMonth(secondMonth)
+
+  // عند تغيير نوع الرحلة، إعادة تعيين التواريخ
+  const handleTripTypeChange = (type: 'one-way' | 'round-trip') => {
+    setTripType(type)
+    if (type === 'one-way') {
+      setSelectedReturnDate(null)
+    }
+  }
+
+  // دوال المسافرين
+  const formatPassengers = (): string => {
+    const parts = []
+    if (adults > 0) parts.push(`${adults} ${adults === 1 ? 'بالغ' : 'بالغ'}`)
+    if (children > 0) parts.push(`${children} ${children === 1 ? 'طفل' : 'طفل'}`)
+    if (infants > 0) parts.push(`${infants} ${infants === 1 ? 'رضيع' : 'رضيع'}`)
+    return parts.length > 0 ? parts.join(', ') : '1 بالغ'
+  }
+
+  const handlePassengerChange = (type: 'adults' | 'children' | 'infants', increment: boolean) => {
+    if (type === 'adults') {
+      setAdults(prev => Math.max(0, increment ? prev + 1 : prev - 1))
+    } else if (type === 'children') {
+      setChildren(prev => Math.max(0, increment ? prev + 1 : prev - 1))
+    } else if (type === 'infants') {
+      setInfants(prev => Math.max(0, increment ? prev + 1 : prev - 1))
+    }
+  }
+
+  const handleApplyPassengers = () => {
+    setShowPassengersDropdown(false)
+  }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f5f5f5', fontFamily: 'Arial, sans-serif', direction: 'rtl' }}>
-      {/* Header */}
-      <header style={{ backgroundColor: 'white', padding: '1rem 2rem', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-        <div style={{ maxWidth: '1400px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#00758f' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontSize: '2rem' }}>SAR</span>
-              <div style={{ fontSize: '0.7rem', lineHeight: '1.2' }}>
-                <div>السكك الحديدية</div>
-                <div>SAUDI ARABIA RAILWAYS</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Progress Tabs */}
-      <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e0e0e0' }}>
-        <div style={{ maxWidth: '1400px', margin: '0 auto', display: 'flex' }}>
-          {tabs.map((tab, index) => (
-            <div
-              key={index}
-              style={{
-                flex: 1,
-                padding: '1.5rem 1rem',
-                textAlign: 'center',
-                borderBottom: index === activeTab ? '4px solid #00758f' : '4px solid transparent',
-                color: index === activeTab ? '#00758f' : '#999',
-                fontWeight: index === activeTab ? 'bold' : 'normal',
-                cursor: 'pointer',
-                transition: 'all 0.3s'
-              }}
-              onClick={() => setActiveTab(index)}
-            >
-              {tab}
-            </div>
-          ))}
-        </div>
+    <section className="booking-section">
+      <div className="booking-tabs">
+        <button className="tab-btn">
+          <i className="fas fa-train"></i>
+          احجز القطار
+        </button>
+        <button className="tab-btn">
+          <i className="fas fa-train"></i>
+          حجز تذاكر السفر + شحن السيارات
+        </button>
+        <button className="tab-btn">
+          <i className="fas fa-box"></i>
+          حجز شحن السيارات
+        </button>
+        <button className="tab-btn active">
+          <i className="fas fa-ticket-alt"></i>
+          إدارة الحجز
+        </button>
+        <button className="tab-btn">
+          <i className="fas fa-plus"></i>
+          خدمات إضافية
+        </button>
       </div>
 
-      {/* Main Content */}
-      <div style={{ maxWidth: '1400px', margin: '2rem auto', padding: '0 2rem' }}>
-        {/* Trip Info Card */}
-        <div style={{ backgroundColor: 'white', borderRadius: '8px', padding: '1.5rem', marginBottom: '1.5rem', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.5rem', fontWeight: 'bold' }}>
-                <span>HAF</span>
-                <span style={{ fontSize: '1.2rem', color: '#666' }}>←</span>
-                <span>DMM</span>
+      <div className="booking-card">
+        <div className="booking-form">
+          <div className="booking-item" style={{ position: 'relative' }}>
+            <div className="form-group">
+              <i className="fas fa-map-marker-alt form-icon"></i>
+            </div>
+            <div className="form-content">
+              <div className="form-label">
+                <span className="from-text">من</span>
+                <span className="arrow">←</span>
+                <span className="to-text">الى</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#666' }}>
-                <i className="fas fa-calendar" style={{ fontSize: '0.9rem' }}></i>
-                <span>الخميس، 13 نوفمبر 2025</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#666' }}>
-                <i className="fas fa-user" style={{ fontSize: '0.9rem' }}></i>
-                <span>1 بالغ</span>
+              <div
+                className="form-value"
+                ref={fromButtonRef}
+                onClick={() => {
+                  setShowFromDropdown(true)
+                  setShowToDropdown(true)
+                }}
+                style={{ cursor: 'pointer' }}
+              >
+                {fromStation && toStation
+                  ? `${fromStation} ← ${toStation}`
+                  : fromStation
+                    ? `${fromStation} ← حدد محطة الوصول`
+                    : 'حدد محطات المغادرة والوصول'
+                }
               </div>
             </div>
-            <button style={{ 
-              backgroundColor: 'transparent', 
-              border: '1px solid #00758f', 
-              color: '#00758f', 
-              padding: '0.5rem 1.5rem', 
-              borderRadius: '4px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem'
-            }}>
-              <i className="fas fa-edit"></i>
-              تعديل البحث
-            </button>
-          </div>
-          <div style={{ fontSize: '1.5rem', textAlign: 'left' }}>
-            <span style={{ fontWeight: 'bold' }}>0</span>
-            <span style={{ fontSize: '1rem', color: '#666' }}>.00 ر.س.</span>
-          </div>
-        </div>
 
-        {/* Date Selector */}
-        <div style={{ backgroundColor: 'white', borderRadius: '8px', padding: '1rem', marginBottom: '1.5rem', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <button style={{ 
-              background: 'none', 
-              border: 'none', 
-              fontSize: '1.5rem', 
-              cursor: 'pointer',
-              color: '#00758f',
-              padding: '0.5rem'
-            }}>
-              <i className="fas fa-chevron-right"></i>
-            </button>
-            <div style={{ display: 'flex', gap: '0.5rem', flex: 1, justifyContent: 'center' }}>
-              {dates.map((date, index) => (
-                <div
-                  key={index}
-                  style={{
-                    padding: '1rem 1.5rem',
-                    borderRadius: '8px',
-                    backgroundColor: date.isActive ? '#00758f' : 'transparent',
-                    color: date.isActive ? 'white' : '#333',
-                    cursor: 'pointer',
-                    textAlign: 'center',
-                    minWidth: '120px',
-                    border: date.isActive ? 'none' : '1px solid #e0e0e0'
-                  }}
-                >
-                  <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{date.day} {date.date.split(' ')[0]}</div>
-                  <div style={{ fontSize: '0.9rem', marginTop: '0.25rem' }}>{date.dayName}</div>
+            {/* Dropdown مع قائمتين جنباً إلى جنب */}
+            {showDropdown && (
+              <div className="station-dropdown" ref={fromDropdownRef}>
+                <div className="dropdown-header">
+                  <span>حدد محطات المغادرة والوصول</span>
+                  <i className="fas fa-times" onClick={() => {
+                    setShowFromDropdown(false)
+                    setShowToDropdown(false)
+                  }}></i>
                 </div>
-              ))}
-            </div>
-            <button style={{ 
-              background: 'none', 
-              border: 'none', 
-              fontSize: '1.5rem', 
-              cursor: 'pointer',
-              color: '#00758f',
-              padding: '0.5rem'
-            }}>
-              <i className="fas fa-chevron-left"></i>
-            </button>
-          </div>
-        </div>
+                <div className="dropdown-columns">
 
-        {/* Trips Section */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', marginBottom: '1.5rem' }}>
-          <button style={{
-            backgroundColor: '#e8f4f8',
-            border: '1px solid #00758f',
-            color: '#00758f',
-            padding: '0.75rem 1rem',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            whiteSpace: 'nowrap'
-          }}>
-            <i className="fas fa-filter"></i>
-            تصنيف
-            <i className="fas fa-chevron-down" style={{ fontSize: '0.8rem' }}></i>
-          </button>
-          
-          <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: 0 }}>اختيار رحلة الذهاب</h2>
-        </div>
-
-        {/* Trips List */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {trips.map((trip) => (
-            <div
-              key={trip.id}
-              style={{
-                backgroundColor: 'white',
-                borderRadius: '8px',
-                padding: '1.5rem',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                cursor: 'pointer',
-                border: selectedTrip === trip.id ? '2px solid #00758f' : '2px solid transparent',
-                transition: 'all 0.3s'
-              }}
-              onClick={() => setSelectedTrip(trip.id)}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                {/* Trip Details */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '3rem', flex: 1 }}>
-                  {/* Train Number */}
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '0.25rem' }}>رقم القطار</div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>12</div>
-                  </div>
-
-                  {/* Time and Stations */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', flex: 1 }}>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: '1.8rem', fontWeight: 'bold' }}>{trip.departure}</div>
-                      <div style={{ fontSize: '0.9rem', color: '#666', marginTop: '0.25rem' }}>HAF</div>
+                  {/* القائمة اليسرى - محطة الوصول */}
+                  <div className="dropdown-column">
+                    <div className="column-header">الى</div>
+                    <div className="station-list">
+                      {fromStation ? (
+                        availableToStations.length > 0 ? (
+                          availableToStations.map((station) => (
+                            <div
+                              key={station.code}
+                              className={`station-item ${toStation === station.name ? 'selected' : ''}`}
+                              onClick={() => handleToStationSelect(station.name)}
+                            >
+                              <span className="station-name">{station.name}</span>
+                              <span className="station-code">{station.code}</span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="no-stations">لا توجد محطات متاحة</div>
+                        )
+                      ) : (
+                        <div className="no-stations">اختر محطة المغادرة أولاً</div>
+                      )}
                     </div>
-
-                    <div style={{ flex: 1, position: 'relative' }}>
-                      <div style={{
-                        height: '2px',
-                        backgroundColor: '#00758f',
-                        position: 'relative',
-                        margin: '0 1rem'
-                      }}>
-                        <div style={{
-                          position: 'absolute',
-                          left: '50%',
-                          top: '50%',
-                          transform: 'translate(-50%, -50%)',
-                          backgroundColor: 'white',
-                          padding: '0 0.5rem'
-                        }}>
-                          <i className="fas fa-train" style={{ color: '#00758f', fontSize: '1.2rem' }}></i>
+                  </div>
+                  {/* القائمة اليمنى - محطة المغادرة */}
+                  <div className="dropdown-column">
+                    <div className="column-header">من</div>
+                    <div className="station-list">
+                      {stations.map((station) => (
+                        <div
+                          key={station.code}
+                          className={`station-item ${fromStation === station.name ? 'selected' : ''}`}
+                          onClick={() => handleFromStationSelect(station.name)}
+                        >
+                          <span className="station-name">{station.name}</span>
+                          <span className="station-code">{station.code}</span>
                         </div>
-                      </div>
-                      <div style={{ textAlign: 'center', marginTop: '0.5rem', fontSize: '0.85rem', color: '#666' }}>
-                        <div>{trip.duration}</div>
-                        <div>{trip.durationMinutes}</div>
-                      </div>
-                    </div>
-
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: '1.8rem', fontWeight: 'bold' }}>{trip.arrival}</div>
-                      <div style={{ fontSize: '0.9rem', color: '#666', marginTop: '0.25rem' }}>DMM</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Pricing Cards */}
-                <div style={{ display: 'flex', gap: '1rem' }}>
-                  <div style={{
-                    backgroundColor: '#e8f4f8',
-                    border: '1px solid #00758f',
-                    borderRadius: '8px',
-                    padding: '1rem 1.5rem',
-                    textAlign: 'center',
-                    minWidth: '150px'
-                  }}>
-                    <div style={{ fontSize: '0.9rem', color: '#666', marginBottom: '0.5rem' }}>الدرجة الاقتصادية</div>
-                    <div style={{ fontSize: '0.8rem', color: '#999', marginBottom: '0.5rem' }}>من</div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#00758f' }}>
-                      {trip.price}<span style={{ fontSize: '0.9rem' }}>.00</span>
-                      <span style={{ fontSize: '0.9rem', fontWeight: 'normal' }}> ر.س</span>
+                      ))}
                     </div>
                   </div>
 
-                  <div style={{
-                    backgroundColor: '#f5f5f5',
-                    border: '1px solid #ddd',
-                    borderRadius: '8px',
-                    padding: '1rem 1.5rem',
-                    textAlign: 'center',
-                    minWidth: '150px'
-                  }}>
-                    <div style={{ fontSize: '0.9rem', color: '#666', marginBottom: '0.5rem' }}>الدرجة الأعمال</div>
-                    <div style={{ fontSize: '0.8rem', color: '#999', marginBottom: '0.5rem' }}>من</div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#333' }}>
-                      {trip.businessPrice}<span style={{ fontSize: '0.9rem' }}>.00</span>
-                      <span style={{ fontSize: '0.9rem', fontWeight: 'normal' }}> ر.س</span>
-                    </div>
-                  </div>
+                  
                 </div>
               </div>
+            )}
+          </div>
+
+          <div className="booking-item" style={{ position: 'relative' }}>
+            <div className="form-group">
+              <i className="fas fa-calendar-alt form-icon"></i>
             </div>
-          ))}
+            <div className="form-content">
+              <div className="form-label">مواعيد السفر</div>
+              <div
+                className="form-value"
+                ref={dateButtonRef}
+                onClick={() => setShowDateDropdown(!showDateDropdown)}
+                style={{ cursor: 'pointer' }}
+              >
+                {formatDateRange()}
+              </div>
+            </div>
+
+            {/* Date Dropdown */}
+            {showDateDropdown && (
+              <div className="date-dropdown" ref={dateDropdownRef}>
+                <div className="dropdown-header">
+                  <span>اختر تاريخ السفر</span>
+                  <i className="fas fa-times" onClick={() => setShowDateDropdown(false)}></i>
+                </div>
+                
+                {/* Toggle نوع الرحلة داخل الـ dropdown */}
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'center',
+                  marginBottom: '20px'
+                }}>
+                  <div style={{ 
+                    display: 'flex', 
+                    gap: '0',
+                    background: '#2b8a9d', 
+                    borderRadius: '12px', 
+                    padding: '4px',
+                    width: 'fit-content'
+                  }}>
+                    <button
+                      onClick={() => handleTripTypeChange('one-way')}
+                      style={{
+                        padding: '8px 24px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        background: tripType === 'one-way' ? 'white' : 'transparent',
+                        color: tripType === 'one-way' ? '#2b8a9d' : 'white',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s',
+                        fontSize: '14px'
+                      }}
+                    >
+                      مسار واحد
+                    </button>
+                    <button
+                      onClick={() => handleTripTypeChange('round-trip')}
+                      style={{
+                        padding: '8px 24px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        background: tripType === 'round-trip' ? 'white' : 'transparent',
+                        color: tripType === 'round-trip' ? '#2b8a9d' : 'white',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s',
+                        fontSize: '14px'
+                      }}
+                    >
+                      ذهاب وعودة
+                    </button>
+                  </div>
+                </div>
+
+                <div className="calendar-container">
+                  {/* التقويم الأول - تاريخ الذهاب */}
+                  <div className="calendar-month">
+                    <div className="calendar-header">
+                      <button onClick={handlePrevMonth}>
+                        <i className="fas fa-chevron-right"></i>
+                      </button>
+                      <span>{tripType === 'round-trip' ? 'من' : ''} {arabicMonths[firstMonth.getMonth()]} {firstMonth.getFullYear()}</span>
+                      <button onClick={handleNextMonth}>
+                        <i className="fas fa-chevron-left"></i>
+                      </button>
+                    </div>
+                    <div className="calendar-days-header">
+                      {arabicDaysShort.map((day, index) => (
+                        <div key={index} className="calendar-day-name">{day}</div>
+                      ))}
+                    </div>
+                    <div className="calendar-days">
+                      {firstMonthDays.map((dayObj, index) => {
+                        const isSelected = isSameDay(selectedDate, dayObj.date)
+                        const isPast = isPastDate(dayObj.date)
+                        const inRange = isInRange(dayObj.date)
+                        return (
+                          <div
+                            key={index}
+                            className={`calendar-day ${!dayObj.isCurrentMonth ? 'empty' : ''} ${isPast ? 'past' : ''} ${isSelected ? 'selected' : ''} ${inRange ? 'in-range' : ''}`}
+                            onClick={() => !isPast && dayObj.isCurrentMonth && handleDateSelect(dayObj.date, false)}
+                          >
+                            {dayObj.day}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* التقويم الثاني - تاريخ العودة (فقط عند ذهاب وعودة) */}
+                  {tripType === 'round-trip' && (
+                    <div className="calendar-month">
+                      <div className="calendar-header">
+                        <button onClick={() => setCurrentReturnMonth(new Date(currentReturnMonth.getFullYear(), currentReturnMonth.getMonth() - 1, 1))}>
+                          <i className="fas fa-chevron-right"></i>
+                        </button>
+                        <span>الى {arabicMonths[secondMonth.getMonth()]} {secondMonth.getFullYear()}</span>
+                        <button onClick={() => setCurrentReturnMonth(new Date(currentReturnMonth.getFullYear(), currentReturnMonth.getMonth() + 1, 1))}>
+                          <i className="fas fa-chevron-left"></i>
+                        </button>
+                      </div>
+                      <div className="calendar-days-header">
+                        {arabicDaysShort.map((day, index) => (
+                          <div key={index} className="calendar-day-name">{day}</div>
+                        ))}
+                      </div>
+                      <div className="calendar-days">
+                        {secondMonthDays.map((dayObj, index) => {
+                          const isSelected = isSameDay(selectedReturnDate, dayObj.date)
+                          const isPast = isPastDate(dayObj.date)
+                          const isDisabled = isDateDisabled(dayObj.date, true)
+                          const inRange = isInRange(dayObj.date)
+                          return (
+                            <div
+                              key={index}
+                              className={`calendar-day ${!dayObj.isCurrentMonth ? 'empty' : ''} ${isPast || isDisabled ? 'past' : ''} ${isSelected ? 'selected' : ''} ${inRange ? 'in-range' : ''}`}
+                              onClick={() => !isPast && !isDisabled && dayObj.isCurrentMonth && handleDateSelect(dayObj.date, true)}
+                            >
+                              {dayObj.day}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* عند مسار واحد، نعرض تقويمين متتاليين فقط */}
+                  {tripType === 'one-way' && (
+                    <div className="calendar-month">
+                      <div className="calendar-header">
+                        <button onClick={() => setCurrentMonth(new Date(secondMonth.getFullYear(), secondMonth.getMonth() - 1, 1))}>
+                          <i className="fas fa-chevron-right"></i>
+                        </button>
+                        <span>{arabicMonths[secondMonth.getMonth()]} {secondMonth.getFullYear()}</span>
+                        <button onClick={() => setCurrentMonth(new Date(secondMonth.getFullYear(), secondMonth.getMonth() + 1, 1))}>
+                          <i className="fas fa-chevron-left"></i>
+                        </button>
+                      </div>
+                      <div className="calendar-days-header">
+                        {arabicDaysShort.map((day, index) => (
+                          <div key={index} className="calendar-day-name">{day}</div>
+                        ))}
+                      </div>
+                      <div className="calendar-days">
+                        {secondMonthDays.map((dayObj, index) => {
+                          const isSelected = isSameDay(selectedDate, dayObj.date)
+                          const isPast = isPastDate(dayObj.date)
+                          return (
+                            <div
+                              key={index}
+                              className={`calendar-day ${!dayObj.isCurrentMonth ? 'empty' : ''} ${isPast ? 'past' : ''} ${isSelected ? 'selected' : ''}`}
+                              onClick={() => !isPast && dayObj.isCurrentMonth && handleDateSelect(dayObj.date, false)}
+                            >
+                              {dayObj.day}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="date-dropdown-actions">
+                  <button className="cancel-btn" onClick={() => setShowDateDropdown(false)}>
+                    الغاء
+                  </button>
+                  <button 
+                    className="apply-btn" 
+                    onClick={() => {
+                      if (tripType === 'one-way' && selectedDate) {
+                        setShowDateDropdown(false)
+                      } else if (tripType === 'round-trip' && selectedDate && selectedReturnDate) {
+                        setShowDateDropdown(false)
+                      }
+                    }}
+                    disabled={tripType === 'round-trip' && (!selectedDate || !selectedReturnDate)}
+                    style={{ 
+                      opacity: (tripType === 'round-trip' && (!selectedDate || !selectedReturnDate)) ? 0.5 : 1,
+                      cursor: (tripType === 'round-trip' && (!selectedDate || !selectedReturnDate)) ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    تطبيق
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="booking-item" style={{ position: 'relative' }}>
+            <div className="form-group">
+              <i className="fas fa-user-plus form-icon"></i>
+            </div>
+            <div className="form-content">
+              <div className="form-label">المسافرين</div>
+              <div
+                className="form-value"
+                ref={passengersButtonRef}
+                onClick={() => setShowPassengersDropdown(!showPassengersDropdown)}
+                style={{ cursor: 'pointer' }}
+              >
+                {formatPassengers()}
+              </div>
+            </div>
+
+            {/* Passengers Dropdown */}
+            {showPassengersDropdown && (
+              <div className="date-dropdown" ref={passengersDropdownRef} style={{ minWidth: '320px', maxWidth: '400px' }}>
+                <div className="dropdown-header">
+                  <span>المسافرين</span>
+                  <i className="fas fa-times" onClick={() => setShowPassengersDropdown(false)}></i>
+                </div>
+                
+                <div style={{ padding: '20px' }}>
+                  {/* بالغ */}
+                  <div style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center',
+                    marginBottom: '20px'
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: '600', fontSize: '15px', marginBottom: '4px', color: '#333' }}>
+                        بالغ
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#666' }}>
+                        العمر +12
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <button
+                        onClick={() => handlePassengerChange('adults', false)}
+                        disabled={adults === 0}
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '8px',
+                          border: '1px solid #ddd',
+                          background: adults === 0 ? '#f5f5f5' : 'white',
+                          color: adults === 0 ? '#ccc' : '#2b8a9d',
+                          cursor: adults === 0 ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '18px',
+                          fontWeight: '600'
+                        }}
+                      >
+                        −
+                      </button>
+                      <div style={{ 
+                        minWidth: '40px', 
+                        textAlign: 'center', 
+                        fontSize: '16px', 
+                        fontWeight: '600',
+                        color: '#333'
+                      }}>
+                        {adults}
+                      </div>
+                      <button
+                        onClick={() => handlePassengerChange('adults', true)}
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '8px',
+                          border: '1px solid #2b8a9d',
+                          background: '#2b8a9d',
+                          color: 'white',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '18px',
+                          fontWeight: '600'
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* طفل */}
+                  <div style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center',
+                    marginBottom: '20px'
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: '600', fontSize: '15px', marginBottom: '4px', color: '#333' }}>
+                        طفل
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#666' }}>
+                        العمر 2-11
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <button
+                        onClick={() => handlePassengerChange('children', false)}
+                        disabled={children === 0}
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '8px',
+                          border: '1px solid #ddd',
+                          background: children === 0 ? '#f5f5f5' : 'white',
+                          color: children === 0 ? '#ccc' : '#2b8a9d',
+                          cursor: children === 0 ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '18px',
+                          fontWeight: '600'
+                        }}
+                      >
+                        −
+                      </button>
+                      <div style={{ 
+                        minWidth: '40px', 
+                        textAlign: 'center', 
+                        fontSize: '16px', 
+                        fontWeight: '600',
+                        color: '#333'
+                      }}>
+                        {children}
+                      </div>
+                      <button
+                        onClick={() => handlePassengerChange('children', true)}
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '8px',
+                          border: '1px solid #2b8a9d',
+                          background: '#2b8a9d',
+                          color: 'white',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '18px',
+                          fontWeight: '600'
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* رضيع */}
+                  <div style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center',
+                    marginBottom: '20px'
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: '600', fontSize: '15px', marginBottom: '4px', color: '#333' }}>
+                        رضيع
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#666' }}>
+                        العمر 0-1
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <button
+                        onClick={() => handlePassengerChange('infants', false)}
+                        disabled={infants === 0}
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '8px',
+                          border: '1px solid #ddd',
+                          background: infants === 0 ? '#f5f5f5' : 'white',
+                          color: infants === 0 ? '#ccc' : '#2b8a9d',
+                          cursor: infants === 0 ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '18px',
+                          fontWeight: '600'
+                        }}
+                      >
+                        −
+                      </button>
+                      <div style={{ 
+                        minWidth: '40px', 
+                        textAlign: 'center', 
+                        fontSize: '16px', 
+                        fontWeight: '600',
+                        color: '#333'
+                      }}>
+                        {infants}
+                      </div>
+                      <button
+                        onClick={() => handlePassengerChange('infants', true)}
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '8px',
+                          border: '1px solid #2b8a9d',
+                          background: '#2b8a9d',
+                          color: 'white',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '18px',
+                          fontWeight: '600'
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="date-dropdown-actions">
+                  <button className="apply-btn" onClick={handleApplyPassengers} style={{ width: '100%' }}>
+                    تطبيق
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
+
+        <a href="#" className="add-promo">
+          <i className="fas fa-plus-circle"></i>
+          اضف الرمز الترويجي
+        </a>
       </div>
 
-      {/* FontAwesome Icons */}
-      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-    </div>
+      <button className="select-trip-btn">
+        <span>اختيار الرحلة</span>
+        <i className="fas fa-arrow-left"></i>
+      </button>
+    </section>
   )
 }
