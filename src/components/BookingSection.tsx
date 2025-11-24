@@ -314,7 +314,7 @@ export default function BookingSection() {
   return (
     <section className="booking-section">
       <div className="booking-tabs">
-        <button className="tab-btn">
+        <button className="tab-btn active">
           <i className="fas fa-train"></i>
           احجز القطار
         </button>
@@ -326,7 +326,7 @@ export default function BookingSection() {
           <i className="fas fa-box"></i>
           حجز شحن السيارات
         </button>
-        <button className="tab-btn active">
+        <button className="tab-btn">
           <i className="fas fa-ticket-alt"></i>
           إدارة الحجز
         </button>
@@ -349,6 +349,7 @@ export default function BookingSection() {
                 <span className="to-text">الى</span>
               </div>
               <div
+                id="station-selector-trigger"
                 className="form-value"
                 ref={fromButtonRef}
                 onClick={() => {
@@ -368,7 +369,11 @@ export default function BookingSection() {
 
             {/* Dropdown مع قائمتين جنباً إلى جنب */}
             {showDropdown && (
-              <div className="station-dropdown" ref={fromDropdownRef}>
+              <div
+                id="station-selector-dropdown"
+                className="station-dropdown"
+                ref={fromDropdownRef}
+              >
                 <div className="dropdown-header">
                   <span>حدد محطات المغادرة والوصول</span>
                   <i className="fas fa-times" onClick={() => {
@@ -379,14 +384,15 @@ export default function BookingSection() {
                 <div className="dropdown-columns">
 
                   {/* القائمة اليسرى - محطة الوصول */}
-                  <div className="dropdown-column">
+                  <div className="dropdown-column" id="station-to-column">
                     <div className="column-header">الى</div>
-                    <div className="station-list">
+                    <div className="station-list" id="station-to-list">
                       {fromStation ? (
                         availableToStations.length > 0 ? (
                           availableToStations.map((station) => (
                             <div
                               key={station.code}
+                              id={`to-${station.code.toLowerCase()}`}
                               className={`station-item ${toStation === station.name ? 'selected' : ''}`}
                               onClick={() => handleToStationSelect(station.name)}
                             >
@@ -403,12 +409,13 @@ export default function BookingSection() {
                     </div>
                   </div>
                   {/* القائمة اليمنى - محطة المغادرة */}
-                  <div className="dropdown-column">
+                  <div className="dropdown-column" id="station-from-column">
                     <div className="column-header">من</div>
-                    <div className="station-list">
+                    <div className="station-list" id="station-from-list">
                       {stations.map((station) => (
                         <div
                           key={station.code}
+                          id={`from-${station.code.toLowerCase()}`}
                           className={`station-item ${fromStation === station.name ? 'selected' : ''}`}
                           onClick={() => handleFromStationSelect(station.name)}
                         >
