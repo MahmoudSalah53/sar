@@ -14,24 +14,85 @@ import {
   EXTRAS_PRICES 
 } from './constants'
 import { formatArabicFullDate, calculateMealsTotal, calculateBaggageTotal, calculateLoungeTotal, calculateExtrasTotal } from './utils'
-import type { Extras, TimeFilters, BookingDraft, PassengerForm, PaymentForm } from './types'
+import type { Extras, BookingDraft, PassengerForm, PaymentForm } from './types'
 import { getTrainsForRoute, type TrainTrip } from './trainData'
 import MealSidebar from './components/MealSidebar'
 import BaggageSidebar from './components/BaggageSidebar'
 import LoungeSidebar from './components/LoungeSidebar'
 
+type StoredBookingSelection = {
+  fromStation?: string
+  toStation?: string
+  tripType?: 'one-way' | 'round-trip'
+  departureDate?: string
+  returnDate?: string
+  departureDateISO?: string | null
+  returnDateISO?: string | null
+  adults?: string | number
+  children?: string | number
+  infants?: string | number
+}
+
+const normalizeCount = (value: unknown, fallback: string): string => {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return Math.floor(value).toString()
+  }
+  if (typeof value === 'string') {
+    const parsed = parseInt(value, 10)
+    if (!Number.isNaN(parsed) && parsed >= 0) {
+      return parsed.toString()
+    }
+  }
+  return fallback
+}
+
 function BookingDetailsContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
 
-  const fromStation = searchParams.get('from') || 'الهفوف'
-  const toStation = searchParams.get('to') || 'الرياض'
-  const departureDate = searchParams.get('departureDate') || '13 نوفمبر 2025'
-  const returnDate = searchParams.get('returnDate') || ''
-  const tripType = searchParams.get('tripType') || 'one-way'
-  const adults = searchParams.get('adults') || '1'
-  const children = searchParams.get('children') || '0'
-  const infants = searchParams.get('infants') || '0'
+  const initialSelection = {
+    fromStation: searchParams.get('from') || 'الهفوف',
+    toStation: searchParams.get('to') || 'الرياض',
+    departureDate: searchParams.get('departureDate') || '13 نوفمبر 2025',
+    returnDate: searchParams.get('returnDate') || '',
+    tripType: (searchParams.get('tripType') as 'one-way' | 'round-trip') || 'one-way',
+    adults: searchParams.get('adults') || '1',
+    children: searchParams.get('children') || '0',
+    infants: searchParams.get('infants') || '0',
+  }
+
+  const [selection, setSelection] = useState(initialSelection)
+  const {
+    fromStation,
+    toStation,
+    departureDate,
+    returnDate,
+    tripType,
+    adults,
+    children,
+    infants,
+  } = selection
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const raw = window.sessionStorage.getItem('bookingSelection')
+      if (!raw) return
+      const data = JSON.parse(raw) as StoredBookingSelection
+      setSelection(prev => ({
+        fromStation: typeof data.fromStation === 'string' && data.fromStation ? data.fromStation : prev.fromStation,
+        toStation: typeof data.toStation === 'string' && data.toStation ? data.toStation : prev.toStation,
+        departureDate: typeof data.departureDate === 'string' && data.departureDate ? data.departureDate : prev.departureDate,
+        returnDate: typeof data.returnDate === 'string' ? data.returnDate : prev.returnDate,
+        tripType: data.tripType === 'round-trip' ? 'round-trip' : data.tripType === 'one-way' ? 'one-way' : prev.tripType,
+        adults: normalizeCount(data.adults, prev.adults),
+        children: normalizeCount(data.children, prev.children),
+        infants: normalizeCount(data.infants, prev.infants),
+      }))
+    } catch (error) {
+      console.error('Failed to load booking selection', error)
+    }
+  }, [])
 
   // حالة العرض في الهيدر (من localStorage أو من الquery params كنسخة احتياطية)
   const [headerFromCode, setHeaderFromCode] = useState('ABQ')
@@ -68,18 +129,9 @@ function BookingDetailsContent() {
     setHeaderDateText(departureDate || 'الخميس، 13 نوفمبر 2025')
     const totalP = parseInt(adults) + parseInt(children) + parseInt(infants)
     setHeaderPassengersText(totalP > 0 ? `${totalP} بالغ` : '1 بالغ')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [adults, children, departureDate, fromStation, infants, toStation])
 
   const [selectedDate, setSelectedDate] = useState(0)
-  const [showSortMenu, setShowSortMenu] = useState(false)
-  const [timeFilters, setTimeFilters] = useState<TimeFilters>({
-    earlyMorning: false,
-    morning: false,
-    afternoon: false,
-    evening: false
-  })
-  const [sortByPrice, setSortByPrice] = useState(false)
   const [selectedTripId, setSelectedTripId] = useState<number | null>(null)
   const [selectedClass, setSelectedClass] = useState<'economy' | 'business' | null>(null)
   const [selectedPlanName, setSelectedPlanName] = useState<string | null>(null)
@@ -377,12 +429,12 @@ function BookingDetailsContent() {
   }
 
   const dates = [
-    { date: '١٣ نوفمبر ٢٠٢٥', day: 'الخميس', isActive: true },
-    { date: '١٤ نوفمبر ٢٠٢٥', day: 'الجمعة', isActive: false },
-    { date: '١٥ نوفمبر ٢٠٢٥', day: 'السبت', isActive: false },
-    { date: '١٦ نوفمبر ٢٠٢٥', day: 'الأحد', isActive: false },
-    { date: '١٧ نوفمبر ٢٠٢٥', day: 'الاثنين', isActive: false },
-    { date: '١٨ نوفمبر ٢٠٢٥', day: 'الثلاثاء', isActive: false }
+    { id: 'date-2025-11-13', date: '١٣ نوفمبر ٢٠٢٥', day: 'الخميس', isActive: true },
+    { id: 'date-2025-11-14', date: '١٤ نوفمبر ٢٠٢٥', day: 'الجمعة', isActive: false },
+    { id: 'date-2025-11-15', date: '١٥ نوفمبر ٢٠٢٥', day: 'السبت', isActive: false },
+    { id: 'date-2025-11-16', date: '١٦ نوفمبر ٢٠٢٥', day: 'الأحد', isActive: false },
+    { id: 'date-2025-11-17', date: '١٧ نوفمبر ٢٠٢٥', day: 'الاثنين', isActive: false },
+    { id: 'date-2025-11-18', date: '١٨ نوفمبر ٢٠٢٥', day: 'الثلاثاء', isActive: false }
   ]
 
   const totalPassengers = parseInt(adults) + parseInt(children) + parseInt(infants)
@@ -582,161 +634,6 @@ function BookingDetailsContent() {
               }}>
                 اختيار رحلة الذهاب
               </h2>
-
-              <div style={{ position: 'relative' }}>
-                <button
-                  onClick={() => setShowSortMenu(!showSortMenu)}
-                  style={{
-                    backgroundColor: '#e8f5f7',
-                    border: '1px solid #d0e8ec',
-                    color: '#2b8a9d',
-                    padding: '0.75rem 1.25rem',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="4" y1="21" x2="4" y2="14" />
-                    <line x1="4" y1="10" x2="4" y2="3" />
-                    <line x1="12" y1="21" x2="12" y2="12" />
-                    <line x1="12" y1="8" x2="12" y2="3" />
-                    <line x1="20" y1="21" x2="20" y2="16" />
-                    <line x1="20" y1="12" x2="20" y2="3" />
-                    <line x1="1" y1="14" x2="7" y2="14" />
-                    <line x1="9" y1="8" x2="15" y2="8" />
-                    <line x1="17" y1="16" x2="23" y2="16" />
-                  </svg>
-                  تصنيف
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                </button>
-
-                {showSortMenu && (
-                  <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    right: 0,
-                    marginTop: '0.5rem',
-                    backgroundColor: 'white',
-                    borderRadius: '8px',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                    padding: '1.5rem',
-                    minWidth: '280px',
-                    zIndex: 1000,
-                    direction: 'rtl'
-                  }}>
-                    <h3 style={{
-                      fontSize: '16px',
-                      fontWeight: 'bold',
-                      color: '#333',
-                      marginBottom: '1rem',
-                      marginTop: 0
-                    }}>
-                      التصنيف وفق
-                    </h3>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                        <span style={{ fontSize: '14px', color: '#333' }}>
-                          <span style={{ color: '#666', marginLeft: '0.5rem' }}>الصباح المبكر</span>
-                          <span style={{ color: '#999' }}>00:00 - 06:00</span>
-                        </span>
-                        <input
-                          type="checkbox"
-                          checked={timeFilters.earlyMorning}
-                          onChange={(e) => setTimeFilters({ ...timeFilters, earlyMorning: e.target.checked })}
-                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                        />
-                      </label>
-
-                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                        <span style={{ fontSize: '14px', color: '#333' }}>
-                          <span style={{ color: '#666', marginLeft: '0.5rem' }}>صباحًا</span>
-                          <span style={{ color: '#999' }}>06:00 - 12:00</span>
-                        </span>
-                        <input
-                          type="checkbox"
-                          checked={timeFilters.morning}
-                          onChange={(e) => setTimeFilters({ ...timeFilters, morning: e.target.checked })}
-                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                        />
-                      </label>
-
-                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                        <span style={{ fontSize: '14px', color: '#333' }}>
-                          <span style={{ color: '#666', marginLeft: '0.5rem' }}>الظهيرة</span>
-                          <span style={{ color: '#999' }}>12:00 - 18:00</span>
-                        </span>
-                        <input
-                          type="checkbox"
-                          checked={timeFilters.afternoon}
-                          onChange={(e) => setTimeFilters({ ...timeFilters, afternoon: e.target.checked })}
-                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                        />
-                      </label>
-
-                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                        <span style={{ fontSize: '14px', color: '#333' }}>
-                          <span style={{ color: '#666', marginLeft: '0.5rem' }}>مساءً</span>
-                          <span style={{ color: '#999' }}>18:00 - 00:00</span>
-                        </span>
-                        <input
-                          type="checkbox"
-                          checked={timeFilters.evening}
-                          onChange={(e) => setTimeFilters({ ...timeFilters, evening: e.target.checked })}
-                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                        />
-                      </label>
-                    </div>
-
-                    <h3 style={{
-                      fontSize: '16px',
-                      fontWeight: 'bold',
-                      color: '#333',
-                      marginBottom: '1rem',
-                      marginTop: 0
-                    }}>
-                      ترتيب حسب
-                    </h3>
-
-                    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', marginBottom: '1.5rem' }}>
-                      <span style={{ fontSize: '14px', color: '#333' }}>السعر</span>
-                      <input
-                        type="checkbox"
-                        checked={sortByPrice}
-                        onChange={(e) => setSortByPrice(e.target.checked)}
-                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                      />
-                    </label>
-
-                    <button
-                      onClick={() => setShowSortMenu(false)}
-                      style={{
-                        width: '100%',
-                        backgroundColor: '#2b8a9d',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '8px',
-                        padding: '0.875rem',
-                        fontSize: '15px',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                        transition: 'background-color 0.2s'
-                      }}
-                      onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#247282'}
-                      onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#2b8a9d'}
-                    >
-                      تطبيق
-                    </button>
-                  </div>
-                )}
-              </div>
             </div>
 
             <div style={{
@@ -767,7 +664,8 @@ function BookingDetailsContent() {
               <div style={{ display: 'flex', gap: '0.5rem', flex: 1, justifyContent: 'center', padding: '0 1rem' }}>
                 {dates.map((date, index) => (
                   <div
-                    key={index}
+                    key={date.id}
+                    id={date.id}
                     onClick={() => setSelectedDate(index)}
                     style={{
                       padding: '0.875rem 1.5rem',
@@ -824,7 +722,7 @@ function BookingDetailsContent() {
                   </div>
                 </div>
               ) : (
-                trips.map((trip) => (
+                trips.map((trip, index) => (
                 <div
                   key={trip.id}
                   style={{
@@ -844,6 +742,7 @@ function BookingDetailsContent() {
                     }}>
                       <div style={{ display: 'flex', gap: '0.625rem' }}>
                         <div
+                          id={`trip-${index + 1}-business`}
                           onClick={() => {
                             const isActive = selectedTripId === trip.id && selectedClass === 'business'
                             if (isActive) {
@@ -881,6 +780,7 @@ function BookingDetailsContent() {
                         </div>
 
                         <div
+                          id={`trip-${index + 1}-economy`}
                           onClick={() => {
                             const isActive = selectedTripId === trip.id && selectedClass === 'economy'
                             if (isActive) {
@@ -1103,7 +1003,9 @@ function BookingDetailsContent() {
                               </div>
                             </div>
 
-                            <button onClick={() => handleSelectPlan(trip, {
+                            <button
+                              id={`trip-${index + 1}-economy-saver`}
+                              onClick={() => handleSelectPlan(trip, {
                               classKey: 'economy',
                               variantKey: 'saver',
                               displayName: 'الاقتصادية التوفيرية',
@@ -1238,7 +1140,9 @@ function BookingDetailsContent() {
                               </div>
                             </div>
 
-                            <button onClick={() => handleSelectPlan(trip, {
+                            <button
+                              id={`trip-${index + 1}-economy-standard`}
+                              onClick={() => handleSelectPlan(trip, {
                               classKey: 'economy',
                               variantKey: 'standard',
                               displayName: 'الاقتصادية',
@@ -1400,7 +1304,9 @@ function BookingDetailsContent() {
                               </div>
                             </div>
 
-                            <button onClick={() => handleSelectPlan(trip, {
+                            <button
+                              id={`trip-${index + 1}-business-standard`}
+                              onClick={() => handleSelectPlan(trip, {
                               classKey: 'business',
                               variantKey: 'standard',
                               displayName: 'الأعمال',
@@ -1535,7 +1441,9 @@ function BookingDetailsContent() {
                               </div>
                             </div>
 
-                            <button onClick={() => handleSelectPlan(trip, {
+                            <button
+                              id={`trip-${index + 1}-business-premium`}
+                              onClick={() => handleSelectPlan(trip, {
                               classKey: 'business',
                               variantKey: 'premium',
                               displayName: 'الأعمال المميزة',
@@ -1562,7 +1470,8 @@ function BookingDetailsContent() {
                   </div>
                 </div>
                 ))
-              )}
+              )
+              }
             </div>
           </>
         )}

@@ -42,7 +42,7 @@ export default function BookingSection() {
   const [showToDropdown, setShowToDropdown] = useState(false)
   const [showDateDropdown, setShowDateDropdown] = useState(false)
   const [tripType, setTripType] = useState<'one-way' | 'round-trip'>('one-way')
-  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date(2025, 10, 16)) // نوفمبر 16, 2025
+  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date(2025, 10, 13)) // نوفمبر 16, 2025
   const [selectedReturnDate, setSelectedReturnDate] = useState<Date | null>(null)
   const [currentMonth, setCurrentMonth] = useState(new Date(2025, 10, 1)) // نوفمبر 2025
   const [currentReturnMonth, setCurrentReturnMonth] = useState(new Date(2025, 11, 1)) // ديسمبر 2025
@@ -311,6 +311,35 @@ export default function BookingSection() {
     setShowPassengersDropdown(false)
   }
 
+  const handleSelectTrip = () => {
+    if (!fromStation || !toStation) {
+      return
+    }
+
+    const selection = {
+      fromStation,
+      toStation,
+      tripType,
+      departureDate: selectedDate ? formatDate(selectedDate) : '',
+      departureDateISO: selectedDate ? selectedDate.toISOString() : null,
+      returnDate: selectedReturnDate ? formatDate(selectedReturnDate) : '',
+      returnDateISO: selectedReturnDate ? selectedReturnDate.toISOString() : null,
+      adults: adults.toString(),
+      children: children.toString(),
+      infants: infants.toString(),
+    }
+
+    if (typeof window !== 'undefined') {
+      try {
+        window.sessionStorage.setItem('bookingSelection', JSON.stringify(selection))
+      } catch (error) {
+        console.error('Failed to persist booking selection', error)
+      }
+    }
+
+    router.push('/booking-details')
+  }
+
   return (
     <section className="booking-section">
       <div className="booking-tabs">
@@ -439,6 +468,7 @@ export default function BookingSection() {
             <div className="form-content">
               <div className="form-label">مواعيد السفر</div>
               <div
+                id="date-picker-trigger"
                 className="form-value"
                 ref={dateButtonRef}
                 onClick={() => setShowDateDropdown(!showDateDropdown)}
@@ -450,14 +480,16 @@ export default function BookingSection() {
 
             {/* Date Dropdown */}
             {showDateDropdown && (
-              <div className="date-dropdown" ref={dateDropdownRef}>
+              <div id="date-picker-dropdown" className="date-dropdown" ref={dateDropdownRef}>
                 <div className="dropdown-header">
                   <span>اختر تاريخ السفر</span>
                   <i className="fas fa-times" onClick={() => setShowDateDropdown(false)}></i>
                 </div>
                 
                 {/* Toggle نوع الرحلة داخل الـ dropdown */}
-                <div style={{ 
+                <div
+                  id="trip-type-toggle"
+                  style={{ 
                   display: 'flex', 
                   justifyContent: 'center',
                   marginBottom: '20px'
@@ -471,6 +503,7 @@ export default function BookingSection() {
                     width: 'fit-content'
                   }}>
                     <button
+                      id="trip-type-one-way"
                       onClick={() => handleTripTypeChange('one-way')}
                       style={{
                         padding: '8px 24px',
@@ -487,6 +520,7 @@ export default function BookingSection() {
                       مسار واحد
                     </button>
                     <button
+                      id="trip-type-round-trip"
                       onClick={() => handleTripTypeChange('round-trip')}
                       style={{
                         padding: '8px 24px',
@@ -507,13 +541,13 @@ export default function BookingSection() {
 
                 <div className="calendar-container">
                   {/* التقويم الأول - تاريخ الذهاب */}
-                  <div className="calendar-month">
+                  <div className="calendar-month" id="depart-calendar">
                     <div className="calendar-header">
-                      <button onClick={handlePrevMonth}>
+                      <button id="depart-prev-month" onClick={handlePrevMonth}>
                         <i className="fas fa-chevron-right"></i>
                       </button>
-                      <span>{tripType === 'round-trip' ? 'من' : ''} {arabicMonths[firstMonth.getMonth()]} {firstMonth.getFullYear()}</span>
-                      <button onClick={handleNextMonth}>
+                      <span id="depart-calendar-title">{tripType === 'round-trip' ? 'من' : ''} {arabicMonths[firstMonth.getMonth()]} {firstMonth.getFullYear()}</span>
+                      <button id="depart-next-month" onClick={handleNextMonth}>
                         <i className="fas fa-chevron-left"></i>
                       </button>
                     </div>
@@ -530,6 +564,9 @@ export default function BookingSection() {
                         return (
                           <div
                             key={index}
+                            id={`depart-${dayObj.date.toISOString().slice(0, 10)}`}
+                            data-date={dayObj.date.toISOString()}
+                            data-month={firstMonth.getMonth()}
                             className={`calendar-day ${!dayObj.isCurrentMonth ? 'empty' : ''} ${isPast ? 'past' : ''} ${isSelected ? 'selected' : ''} ${inRange ? 'in-range' : ''}`}
                             onClick={() => !isPast && dayObj.isCurrentMonth && handleDateSelect(dayObj.date, false)}
                           >
@@ -542,13 +579,19 @@ export default function BookingSection() {
 
                   {/* التقويم الثاني - تاريخ العودة (فقط عند ذهاب وعودة) */}
                   {tripType === 'round-trip' && (
-                    <div className="calendar-month">
+                    <div className="calendar-month" id="return-calendar">
                       <div className="calendar-header">
-                        <button onClick={() => setCurrentReturnMonth(new Date(currentReturnMonth.getFullYear(), currentReturnMonth.getMonth() - 1, 1))}>
+                        <button
+                          id="return-prev-month"
+                          onClick={() => setCurrentReturnMonth(new Date(currentReturnMonth.getFullYear(), currentReturnMonth.getMonth() - 1, 1))}
+                        >
                           <i className="fas fa-chevron-right"></i>
                         </button>
-                        <span>الى {arabicMonths[secondMonth.getMonth()]} {secondMonth.getFullYear()}</span>
-                        <button onClick={() => setCurrentReturnMonth(new Date(currentReturnMonth.getFullYear(), currentReturnMonth.getMonth() + 1, 1))}>
+                        <span id="return-calendar-title">الى {arabicMonths[secondMonth.getMonth()]} {secondMonth.getFullYear()}</span>
+                        <button
+                          id="return-next-month"
+                          onClick={() => setCurrentReturnMonth(new Date(currentReturnMonth.getFullYear(), currentReturnMonth.getMonth() + 1, 1))}
+                        >
                           <i className="fas fa-chevron-left"></i>
                         </button>
                       </div>
@@ -557,7 +600,7 @@ export default function BookingSection() {
                           <div key={index} className="calendar-day-name">{day}</div>
                         ))}
                       </div>
-                      <div className="calendar-days">
+                    <div className="calendar-days">
                         {secondMonthDays.map((dayObj, index) => {
                           const isSelected = isSameDay(selectedReturnDate, dayObj.date)
                           const isPast = isPastDate(dayObj.date)
@@ -566,6 +609,9 @@ export default function BookingSection() {
                           return (
                             <div
                               key={index}
+                              id={`return-${dayObj.date.toISOString().slice(0, 10)}`}
+                              data-date={dayObj.date.toISOString()}
+                              data-month={secondMonth.getMonth()}
                               className={`calendar-day ${!dayObj.isCurrentMonth ? 'empty' : ''} ${isPast || isDisabled ? 'past' : ''} ${isSelected ? 'selected' : ''} ${inRange ? 'in-range' : ''}`}
                               onClick={() => !isPast && !isDisabled && dayObj.isCurrentMonth && handleDateSelect(dayObj.date, true)}
                             >
@@ -579,13 +625,19 @@ export default function BookingSection() {
                   
                   {/* عند مسار واحد، نعرض تقويمين متتاليين فقط */}
                   {tripType === 'one-way' && (
-                    <div className="calendar-month">
+                    <div className="calendar-month" id="next-calendar">
                       <div className="calendar-header">
-                        <button onClick={() => setCurrentMonth(new Date(secondMonth.getFullYear(), secondMonth.getMonth() - 1, 1))}>
+                        <button
+                          id="next-prev-month"
+                          onClick={() => setCurrentMonth(new Date(secondMonth.getFullYear(), secondMonth.getMonth() - 1, 1))}
+                        >
                           <i className="fas fa-chevron-right"></i>
                         </button>
-                        <span>{arabicMonths[secondMonth.getMonth()]} {secondMonth.getFullYear()}</span>
-                        <button onClick={() => setCurrentMonth(new Date(secondMonth.getFullYear(), secondMonth.getMonth() + 1, 1))}>
+                        <span id="next-calendar-title">{arabicMonths[secondMonth.getMonth()]} {secondMonth.getFullYear()}</span>
+                        <button
+                          id="next-next-month"
+                          onClick={() => setCurrentMonth(new Date(secondMonth.getFullYear(), secondMonth.getMonth() + 1, 1))}
+                        >
                           <i className="fas fa-chevron-left"></i>
                         </button>
                       </div>
@@ -601,6 +653,9 @@ export default function BookingSection() {
                           return (
                             <div
                               key={index}
+                              id={`next-${dayObj.date.toISOString().slice(0, 10)}`}
+                              data-date={dayObj.date.toISOString()}
+                              data-month={secondMonth.getMonth()}
                               className={`calendar-day ${!dayObj.isCurrentMonth ? 'empty' : ''} ${isPast ? 'past' : ''} ${isSelected ? 'selected' : ''}`}
                               onClick={() => !isPast && dayObj.isCurrentMonth && handleDateSelect(dayObj.date, false)}
                             >
@@ -613,10 +668,15 @@ export default function BookingSection() {
                   )}
                 </div>
                 <div className="date-dropdown-actions">
-                  <button className="cancel-btn" onClick={() => setShowDateDropdown(false)}>
+                  <button
+                    id="date-picker-cancel"
+                    className="cancel-btn"
+                    onClick={() => setShowDateDropdown(false)}
+                  >
                     الغاء
                   </button>
                   <button 
+                    id="date-picker-apply"
                     className="apply-btn" 
                     onClick={() => {
                       if (tripType === 'one-way' && selectedDate) {
@@ -645,6 +705,7 @@ export default function BookingSection() {
             <div className="form-content">
               <div className="form-label">المسافرين</div>
               <div
+                id="passengers-trigger"
                 className="form-value"
                 ref={passengersButtonRef}
                 onClick={() => setShowPassengersDropdown(!showPassengersDropdown)}
@@ -655,8 +716,13 @@ export default function BookingSection() {
             </div>
 
             {/* Passengers Dropdown */}
-            {showPassengersDropdown && (
-              <div className="date-dropdown" ref={passengersDropdownRef} style={{ minWidth: '320px', maxWidth: '400px' }}>
+              {showPassengersDropdown && (
+              <div
+                id="passengers-panel"
+                className="date-dropdown"
+                ref={passengersDropdownRef}
+                style={{ minWidth: '320px', maxWidth: '400px' }}
+              >
                 <div className="dropdown-header">
                   <span>المسافرين</span>
                   <i className="fas fa-times" onClick={() => setShowPassengersDropdown(false)}></i>
@@ -680,6 +746,7 @@ export default function BookingSection() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <button
+                        id="adult-minus"
                         onClick={() => handlePassengerChange('adults', false)}
                         disabled={adults === 0}
                         style={{
@@ -709,6 +776,7 @@ export default function BookingSection() {
                         {adults}
                       </div>
                       <button
+                        id="adult-plus"
                         onClick={() => handlePassengerChange('adults', true)}
                         style={{
                           width: '32px',
@@ -747,6 +815,7 @@ export default function BookingSection() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <button
+                        id="child-minus"
                         onClick={() => handlePassengerChange('children', false)}
                         disabled={children === 0}
                         style={{
@@ -776,6 +845,7 @@ export default function BookingSection() {
                         {children}
                       </div>
                       <button
+                        id="child-plus"
                         onClick={() => handlePassengerChange('children', true)}
                         style={{
                           width: '32px',
@@ -814,6 +884,7 @@ export default function BookingSection() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <button
+                        id="infant-minus"
                         onClick={() => handlePassengerChange('infants', false)}
                         disabled={infants === 0}
                         style={{
@@ -843,6 +914,7 @@ export default function BookingSection() {
                         {infants}
                       </div>
                       <button
+                        id="infant-plus"
                         onClick={() => handlePassengerChange('infants', true)}
                         style={{
                           width: '32px',
@@ -866,7 +938,12 @@ export default function BookingSection() {
                 </div>
 
                 <div className="date-dropdown-actions">
-                  <button className="apply-btn" onClick={handleApplyPassengers} style={{ width: '100%' }}>
+                  <button
+                    id="passengers-apply-btn"
+                    className="apply-btn"
+                    onClick={handleApplyPassengers}
+                    style={{ width: '100%' }}
+                  >
                     تطبيق
                   </button>
                 </div>
@@ -883,28 +960,7 @@ export default function BookingSection() {
 
     <button
       className="select-trip-btn"
-      onClick={() => {
-        if (fromStation && toStation) {
-          const params = new URLSearchParams()
-          params.set('from', fromStation)
-          params.set('to', toStation)
-          params.set('tripType', tripType)
-          
-          if (selectedDate) {
-            params.set('departureDate', formatDate(selectedDate))
-          }
-          
-          if (tripType === 'round-trip' && selectedReturnDate) {
-            params.set('returnDate', formatDate(selectedReturnDate))
-          }
-          
-          params.set('adults', adults.toString())
-          params.set('children', children.toString())
-          params.set('infants', infants.toString())
-          
-          router.push(`/booking-details?${params.toString()}`)
-        }
-      }}
+      onClick={handleSelectTrip}
       disabled={!fromStation || !toStation}
       style={{
         opacity: (!fromStation || !toStation) ? 0.5 : 1,
