@@ -12,6 +12,8 @@ const nextConfig = {
         hostname: 'tickets.sar.com.sa',
       },
     ],
+    unoptimized: false,
+    minimumCacheTTL: 60,
   },
 }
 

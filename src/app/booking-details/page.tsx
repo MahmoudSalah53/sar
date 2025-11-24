@@ -2,10 +2,25 @@
 
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import Image from 'next/image'
+import { 
+  ARABIC_MONTHS, 
+  ARABIC_DAYS, 
+  STATION_CODES, 
+  MEALS, 
+  BAGGAGE_OPTIONS, 
+  UNAVAILABLE_SEATS, 
+  EXTRAS_PRICES 
+} from './constants'
+import { formatArabicFullDate, calculateMealsTotal, calculateBaggageTotal, calculateLoungeTotal, calculateExtrasTotal } from './utils'
+import type { Extras, TimeFilters, BookingDraft, PassengerForm, PaymentForm } from './types'
+import { getTrainsForRoute, type TrainTrip } from './trainData'
+import MealSidebar from './components/MealSidebar'
+import BaggageSidebar from './components/BaggageSidebar'
+import LoungeSidebar from './components/LoungeSidebar'
 
-export default function BookingDetailsPage() {
+function BookingDetailsContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
 
@@ -24,33 +39,11 @@ export default function BookingDetailsPage() {
   const [headerDateText, setHeaderDateText] = useState('الخميس، 13 نوفمبر 2025')
   const [headerPassengersText, setHeaderPassengersText] = useState('1 بالغ')
 
-  const arabicMonths = [
-    'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
-    'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
-  ]
-  const arabicDays = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
-
-  const formatArabicFullDate = (iso: string | null): string => {
-    if (!iso) return 'الخميس، 13 نوفمبر 2025'
-    const d = new Date(iso)
-    if (isNaN(d.getTime())) return 'الخميس، 13 نوفمبر 2025'
-    const dayName = arabicDays[d.getDay()]
-    const day = d.getDate()
-    const month = arabicMonths[d.getMonth()]
-    const year = d.getFullYear()
-    return `${dayName}، ${day} ${month} ${year}`
-  }
-
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem('bookingDraft')
       if (raw) {
-        const data = JSON.parse(raw) as {
-          fromStationCode?: string
-          toStationCode?: string
-          selectedDateISO?: string
-          passengers?: { summaryAr?: string; adults?: number; children?: number; infants?: number }
-        }
+        const data = JSON.parse(raw) as BookingDraft
         if (data.fromStationCode) setHeaderFromCode(data.fromStationCode)
         if (data.toStationCode) setHeaderToCode(data.toStationCode)
         if (data.selectedDateISO) setHeaderDateText(formatArabicFullDate(data.selectedDateISO))
@@ -70,15 +63,8 @@ export default function BookingDetailsPage() {
       // تجاهل الأخطاء
     }
     // fallback لا توجد بيانات في التخزين: استخدم query params الافتراضية
-    const stationCodes: { [key: string]: string } = {
-      'الهفوف': 'ABQ',
-      'الرياض': 'RYD',
-      'الدمام': 'DMM',
-      'القصيم': 'QSM',
-      'حائل': 'HAI'
-    }
-    setHeaderFromCode(stationCodes[fromStation] || 'ABQ')
-    setHeaderToCode(stationCodes[toStation] || 'RYD')
+    setHeaderFromCode(STATION_CODES[fromStation] || 'ABQ')
+    setHeaderToCode(STATION_CODES[toStation] || 'RYD')
     setHeaderDateText(departureDate || 'الخميس، 13 نوفمبر 2025')
     const totalP = parseInt(adults) + parseInt(children) + parseInt(infants)
     setHeaderPassengersText(totalP > 0 ? `${totalP} بالغ` : '1 بالغ')
@@ -87,7 +73,7 @@ export default function BookingDetailsPage() {
 
   const [selectedDate, setSelectedDate] = useState(0)
   const [showSortMenu, setShowSortMenu] = useState(false)
-  const [timeFilters, setTimeFilters] = useState({
+  const [timeFilters, setTimeFilters] = useState<TimeFilters>({
     earlyMorning: false,
     morning: false,
     afternoon: false,
@@ -102,20 +88,66 @@ export default function BookingDetailsPage() {
   const [showExtras, setShowExtras] = useState(false)
   const [showPayment, setShowPayment] = useState(false)
   const [isPaying, setIsPaying] = useState(false)
-  const [extras, setExtras] = useState({
+  const [showMealSidebar, setShowMealSidebar] = useState(false)
+  const [isClosingSidebar, setIsClosingSidebar] = useState(false)
+  const [showBaggageSidebar, setShowBaggageSidebar] = useState(false)
+  const [isClosingBaggageSidebar, setIsClosingBaggageSidebar] = useState(false)
+  const [showLoungeSidebar, setShowLoungeSidebar] = useState(false)
+  const [isClosingLoungeSidebar, setIsClosingLoungeSidebar] = useState(false)
+  const [showSeatSidebar, setShowSeatSidebar] = useState(false)
+  const [isClosingSeatSidebar, setIsClosingSeatSidebar] = useState(false)
+  const [selectedSeat, setSelectedSeat] = useState<number | null>(null)
+
+  const handleCloseSidebar = () => {
+    setIsClosingSidebar(true)
+    setTimeout(() => {
+      setShowMealSidebar(false)
+      setIsClosingSidebar(false)
+    }, 300) // نفس مدة الـ animation
+  }
+
+  const handleCloseBaggageSidebar = () => {
+    setIsClosingBaggageSidebar(true)
+    setTimeout(() => {
+      setShowBaggageSidebar(false)
+      setIsClosingBaggageSidebar(false)
+    }, 300)
+  }
+
+  const handleCloseLoungeSidebar = () => {
+    setIsClosingLoungeSidebar(true)
+    setTimeout(() => {
+      setShowLoungeSidebar(false)
+      setIsClosingLoungeSidebar(false)
+    }, 300)
+  }
+
+  const handleCloseSeatSidebar = () => {
+    setIsClosingSeatSidebar(true)
+    setTimeout(() => {
+      setShowSeatSidebar(false)
+      setIsClosingSeatSidebar(false)
+    }, 300)
+  }
+  const [extras, setExtras] = useState<Extras>({
     meal: false,
     baggage: false,
     seat: false,
     lounge: false,
   })
-  const extrasPrices = { meal: 10, baggage: 10, seat: 5, lounge: 5 }
-  const extrasTotal = (extras.meal ? extrasPrices.meal : 0)
-    + (extras.baggage ? extrasPrices.baggage : 0)
-    + (extras.seat ? extrasPrices.seat : 0)
-    + (extras.lounge ? extrasPrices.lounge : 0)
+  
+  const [selectedMeals, setSelectedMeals] = useState<{ [key: number]: number }>({})
+  const [selectedBaggage, setSelectedBaggage] = useState<{ [key: number]: number }>({})
+  const [selectedLounge, setSelectedLounge] = useState<number>(0)
+  
+  // حساب الإجماليات
+  const mealsTotal = calculateMealsTotal(selectedMeals, MEALS)
+  const baggageTotal = calculateBaggageTotal(selectedBaggage, BAGGAGE_OPTIONS)
+  const loungeTotal = calculateLoungeTotal(selectedLounge, 30.00)
+  const extrasTotal = calculateExtrasTotal(mealsTotal, baggageTotal, loungeTotal, extras, EXTRAS_PRICES)
 
   // Passenger/contact form state and validation
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<PassengerForm>({
     title: 'السيد',
     firstName: '',
     lastName: '',
@@ -131,6 +163,113 @@ export default function BookingDetailsPage() {
     setForm((prev) => ({ ...prev, [key]: value }))
     setErrors((prev) => ({ ...prev, [key]: undefined })) // clear error on change
   }
+
+  // دالة لمسح جميع بيانات الحجز عند بدء session جديد
+  const clearBookingSession = () => {
+    try {
+      // مسح localStorage
+      window.localStorage.removeItem('selectedMeals')
+      window.localStorage.removeItem('selectedBaggage')
+      window.localStorage.removeItem('selectedLounge')
+      window.localStorage.removeItem('selectedSeat')
+      window.localStorage.removeItem('selectedExtras')
+      window.localStorage.removeItem('passengerInfo')
+      
+      // إعادة تعيين state
+      setSelectedMeals({})
+      setSelectedBaggage({})
+      setSelectedLounge(0)
+      setSelectedSeat(null)
+      setExtras({
+        meal: false,
+        baggage: false,
+        seat: false,
+        lounge: false,
+      })
+      
+      // إعادة تعيين بيانات المسافر
+      setForm({
+        title: 'السيد',
+        firstName: '',
+        lastName: '',
+        docType: 'الهوية الوطنية',
+        docNumber: '',
+        dob: '',
+        phone: '',
+        email: ''
+      })
+      setErrors({})
+      
+      // إعادة تعيين مراحل الحجز
+      setShowPassengerDetails(false)
+      setShowExtras(false)
+      setShowPayment(false)
+    } catch (error) {
+      console.error('Error clearing booking session:', error)
+    }
+  }
+
+
+  // تحميل بيانات المسافر من localStorage (فقط إذا كان هناك trip محدد)
+  useEffect(() => {
+    // لا نحمل البيانات إلا إذا كان هناك trip محدد حالياً
+    if (selectedTripId === null || selectedClass === null) {
+      return
+    }
+
+    try {
+      const passengerData = window.localStorage.getItem('passengerInfo')
+      if (passengerData) {
+        const data = JSON.parse(passengerData)
+        if (data.firstName || data.lastName) {
+          setForm(prev => ({
+            ...prev,
+            firstName: data.firstName || prev.firstName,
+            lastName: data.lastName || prev.lastName,
+            title: data.title || prev.title
+          }))
+        }
+      }
+      
+      // تحميل الوجبات المختارة من localStorage
+      const savedMeals = window.localStorage.getItem('selectedMeals')
+      if (savedMeals) {
+        const mealsData = JSON.parse(savedMeals) as { [key: number]: number }
+        setSelectedMeals(mealsData)
+        // تحديث حالة meal بناءً على وجود وجبات
+        const hasMeals = Object.values(mealsData).some((qty: number) => qty > 0)
+        setExtras(prev => ({ ...prev, meal: hasMeals }))
+      }
+      
+      // تحميل الأمتعة المختارة من localStorage
+      const savedBaggage = window.localStorage.getItem('selectedBaggage')
+      if (savedBaggage) {
+        const baggageData = JSON.parse(savedBaggage) as { [key: number]: number }
+        setSelectedBaggage(baggageData)
+        // تحديث حالة baggage بناءً على وجود أمتعة
+        const hasBaggage = Object.values(baggageData).some((qty: number) => qty > 0)
+        setExtras(prev => ({ ...prev, baggage: hasBaggage }))
+      }
+
+      // تحميل صالة الأعمال المختارة من localStorage
+      const savedLounge = window.localStorage.getItem('selectedLounge')
+      if (savedLounge) {
+        const loungeData = parseInt(savedLounge)
+        setSelectedLounge(loungeData)
+        // تحديث حالة lounge بناءً على وجود صالة
+        setExtras(prev => ({ ...prev, lounge: loungeData > 0 }))
+      }
+
+      // تحميل المقعد المختار
+      const savedSeat = window.localStorage.getItem('selectedSeat')
+      if (savedSeat) {
+        setSelectedSeat(parseInt(savedSeat))
+        setExtras(prev => ({ ...prev, seat: true }))
+      }
+    } catch {
+      // تجاهل الأخطاء
+    }
+  }, [selectedTripId, selectedClass])
 
   // Display value for DOB as dd/mm/yyyy while storing ISO yyyy-mm-dd
   const [dobDisplay, setDobDisplay] = useState('')
@@ -192,7 +331,7 @@ export default function BookingDetailsPage() {
   }
 
   // Payment form state & validation
-  const [paymentForm, setPaymentForm] = useState({
+  const [paymentForm, setPaymentForm] = useState<PaymentForm>({
     cardName: '',
     cardNumber: '',
     expMonth: '',
@@ -248,23 +387,12 @@ export default function BookingDetailsPage() {
 
   const totalPassengers = parseInt(adults) + parseInt(children) + parseInt(infants)
 
-  const trips = [
-    {
-      id: 1,
-      trainNumber: '14',
-      departure: '20:11',
-      arrival: '20:58',
-      departureStation: 'ABQ',
-      arrivalStation: 'DMM',
-      stops: 'مباشر',
-      duration: '',
-      economyPrice: 35.00,
-      businessPrice: 50.00,
-      economySaver: 45.00
-    }
-  ]
+  // الحصول على القطارات حسب المسار والتاريخ المختار
+  const selectedDateObj = dates[selectedDate]
+  const selectedDateString = selectedDateObj ? selectedDateObj.date : dates[0].date
+  const trips: TrainTrip[] = getTrainsForRoute(fromStation, toStation, selectedDateString)
 
-  const handleSelectPlan = (trip: typeof trips[number], plan: {
+  const handleSelectPlan = (trip: TrainTrip, plan: {
     classKey: 'economy' | 'business',
     variantKey: 'saver' | 'standard' | 'premium',
     displayName: string,
@@ -680,7 +808,23 @@ export default function BookingDetailsPage() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {trips.map((trip) => (
+              {trips.length === 0 ? (
+                <div style={{
+                  backgroundColor: 'white',
+                  borderRadius: '12px',
+                  padding: '3rem 2rem',
+                  textAlign: 'center',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+                }}>
+                  <div style={{ fontSize: '18px', color: '#666', marginBottom: '0.5rem' }}>
+                    لا توجد قطارات متاحة لهذا المسار والتاريخ
+                  </div>
+                  <div style={{ fontSize: '14px', color: '#999' }}>
+                    يرجى اختيار تاريخ آخر أو مسار مختلف
+                  </div>
+                </div>
+              ) : (
+                trips.map((trip) => (
                 <div
                   key={trip.id}
                   style={{
@@ -706,6 +850,10 @@ export default function BookingDetailsPage() {
                               setSelectedTripId(null)
                               setSelectedClass(null)
                             } else {
+                              // عند اختيار trip جديد، مسح جميع بيانات الحجز السابقة
+                              if (selectedTripId !== trip.id || selectedClass !== 'business') {
+                                clearBookingSession()
+                              }
                               setSelectedTripId(trip.id)
                               setSelectedClass('business')
                             }
@@ -739,6 +887,10 @@ export default function BookingDetailsPage() {
                               setSelectedTripId(null)
                               setSelectedClass(null)
                             } else {
+                              // عند اختيار trip جديد، مسح جميع بيانات الحجز السابقة
+                              if (selectedTripId !== trip.id || selectedClass !== 'economy') {
+                                clearBookingSession()
+                              }
                               setSelectedTripId(trip.id)
                               setSelectedClass('economy')
                             }
@@ -1409,7 +1561,8 @@ export default function BookingDetailsPage() {
                     )}
                   </div>
                 </div>
-              ))}
+                ))
+              )}
             </div>
           </>
         )}
@@ -1734,16 +1887,14 @@ export default function BookingDetailsPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1rem' }}>
               <button
                 onClick={() => {
-                  const next = { ...extras, meal: !extras.meal }
-                  setExtras(next)
-                  window.localStorage.setItem('selectedExtras', JSON.stringify(next))
+                  setShowMealSidebar(true)
                 }}
                 style={{
                   textAlign: 'right',
                   padding: '1.25rem',
                   borderRadius: 12,
-                  border: extras.meal ? '2px solid #2b8a9d' : '1px solid #e5e5e5',
-                  background: extras.meal ? '#e8f5f7' : '#fff',
+                  border: mealsTotal > 0 ? '2px solid #2b8a9d' : '1px solid #e5e5e5',
+                  background: mealsTotal > 0 ? '#e8f5f7' : '#fff',
                   cursor: 'pointer'
                 }}
               >
@@ -1758,16 +1909,14 @@ export default function BookingDetailsPage() {
               </button>
               <button
                 onClick={() => {
-                  const next = { ...extras, baggage: !extras.baggage }
-                  setExtras(next)
-                  window.localStorage.setItem('selectedExtras', JSON.stringify(next))
+                  setShowBaggageSidebar(true)
                 }}
                 style={{
                   textAlign: 'right',
                   padding: '1.25rem',
                   borderRadius: 12,
-                  border: extras.baggage ? '2px solid #2b8a9d' : '1px solid #e5e5e5',
-                  background: extras.baggage ? '#e8f5f7' : '#fff',
+                  border: baggageTotal > 0 ? '2px solid #2b8a9d' : '1px solid #e5e5e5',
+                  background: baggageTotal > 0 ? '#e8f5f7' : '#fff',
                   cursor: 'pointer'
                 }}
               >
@@ -1781,9 +1930,7 @@ export default function BookingDetailsPage() {
               </button>
               <button
                 onClick={() => {
-                  const next = { ...extras, seat: !extras.seat }
-                  setExtras(next)
-                  window.localStorage.setItem('selectedExtras', JSON.stringify(next))
+                  setShowSeatSidebar(true)
                 }}
                 style={{
                   textAlign: 'right',
@@ -1805,16 +1952,14 @@ export default function BookingDetailsPage() {
               </button>
               <button
                 onClick={() => {
-                  const next = { ...extras, lounge: !extras.lounge }
-                  setExtras(next)
-                  window.localStorage.setItem('selectedExtras', JSON.stringify(next))
+                  setShowLoungeSidebar(true)
                 }}
                 style={{
                   textAlign: 'right',
                   padding: '1.25rem',
                   borderRadius: 12,
-                  border: extras.lounge ? '2px solid #2b8a9d' : '1px solid #e5e5e5',
-                  background: extras.lounge ? '#e8f5f7' : '#fff',
+                  border: selectedLounge > 0 ? '2px solid #2b8a9d' : '1px solid #e5e5e5',
+                  background: selectedLounge > 0 ? '#e8f5f7' : '#fff',
                   cursor: 'pointer'
                 }}
               >
@@ -1855,6 +2000,754 @@ export default function BookingDetailsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Meal Sidebar */}
+      <MealSidebar
+        isOpen={showMealSidebar}
+        isClosing={isClosingSidebar}
+        onClose={handleCloseSidebar}
+        form={form}
+        selectedMeals={selectedMeals}
+        setSelectedMeals={setSelectedMeals}
+        mealsTotal={mealsTotal}
+        setExtras={setExtras}
+      />
+
+      {/* Baggage Sidebar */}
+      <BaggageSidebar
+        isOpen={showBaggageSidebar}
+        isClosing={isClosingBaggageSidebar}
+        onClose={handleCloseBaggageSidebar}
+        form={form}
+        selectedBaggage={selectedBaggage}
+        setSelectedBaggage={setSelectedBaggage}
+        baggageTotal={baggageTotal}
+        setExtras={setExtras}
+      />
+
+      {/* Lounge Sidebar */}
+      <LoungeSidebar
+        isOpen={showLoungeSidebar}
+        isClosing={isClosingLoungeSidebar}
+        onClose={handleCloseLoungeSidebar}
+        form={form}
+        selectedLounge={selectedLounge}
+        setSelectedLounge={setSelectedLounge}
+        loungeTotal={loungeTotal}
+        setExtras={setExtras}
+      />
+
+      {/* Seat Sidebar - Will be moved to separate component */}
+      {showSeatSidebar && (
+        <>
+          {/* Overlay */}
+          <div
+            onClick={handleCloseSeatSidebar}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              zIndex: 999,
+              animation: isClosingSeatSidebar ? 'fadeOut 0.3s ease-out' : 'fadeIn 0.3s ease-out',
+            }}
+          />
+          
+          {/* Sidebar */}
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: '700px',
+              maxWidth: '90vw',
+              backgroundColor: 'white',
+              boxShadow: '-4px 0 12px rgba(0,0,0,0.15)',
+              zIndex: 1000,
+              overflowY: 'auto',
+              direction: 'rtl',
+              transform: isClosingSeatSidebar ? 'translateX(100%)' : 'translateX(0)',
+              transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              animation: isClosingSeatSidebar ? 'none' : 'slideInRight 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+          >
+            {/* Header */}
+            <div style={{
+              padding: '1.5rem',
+              borderBottom: '1px solid #e5e7eb',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                <h2 style={{ margin: 0, fontSize: '24px', fontWeight: 'bold', color: '#1a1a1a' }}>
+                  اختيار المقعد
+                </h2>
+                <button
+                  onClick={handleCloseSeatSidebar}
+                  style={{
+                    backgroundColor: '#e0f2f5',
+                    color: '#2b8a9d',
+                    border: 'none',
+                    borderRadius: '8px',
+                    width: '36px',
+                    height: '36px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    fontSize: '20px',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+              <button
+                style={{
+                  backgroundColor: '#2b8a9d',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '8px 16px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                اختيار {form.firstName && form.lastName ? `${form.firstName} ${form.lastName}` : 'محمود صلاح منصور'}
+              </button>
+            </div>
+
+            {/* Seat Map Container */}
+            <div style={{
+              flex: 1,
+              backgroundColor: '#e8f4f8',
+              padding: '2rem 1.5rem',
+              overflowY: 'auto',
+              minHeight: 0
+            }}>
+              {/* Section B */}
+              <div style={{ marginBottom: '2rem' }}>
+                <div style={{
+                  textAlign: 'center',
+                  fontSize: '48px',
+                  fontWeight: 'bold',
+                  color: '#2b8a9d',
+                  marginBottom: '1.5rem'
+                }}>
+                  B
+                </div>
+                
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 2fr',
+                  gap: '0.75rem',
+                  maxWidth: '500px',
+                  margin: '0 auto'
+                }}>
+                  {/* Left Column */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {[1, 3, 6, 9, 12, 15, 18, 21, 24, 27].map((seatNum) => (
+                      <div key={seatNum}>
+                        {seatNum === 6 || seatNum === 18 ? (
+                          <div style={{
+                            backgroundColor: '#2b8a9d',
+                            color: 'white',
+                            padding: '0.75rem',
+                            borderRadius: '8px',
+                            textAlign: 'center',
+                            fontSize: '14px',
+                            fontWeight: '500',
+                            marginBottom: '0.75rem'
+                          }}>
+                            طاولة
+                          </div>
+                        ) : null}
+                        <button
+                          onClick={() => {
+                            if (!UNAVAILABLE_SEATS.includes(seatNum)) {
+                              setSelectedSeat(seatNum === selectedSeat ? null : seatNum)
+                            }
+                          }}
+                          disabled={UNAVAILABLE_SEATS.includes(seatNum)}
+                          style={{
+                            width: '100%',
+                            padding: '0.75rem',
+                            borderRadius: '8px',
+                            backgroundColor: UNAVAILABLE_SEATS.includes(seatNum) 
+                              ? 'white' 
+                              : seatNum === selectedSeat 
+                                ? '#1a5f6f' 
+                                : '#2b8a9d',
+                            color: UNAVAILABLE_SEATS.includes(seatNum) ? '#9ca3af' : 'white',
+                            fontSize: '16px',
+                            fontWeight: '600',
+                            cursor: UNAVAILABLE_SEATS.includes(seatNum) ? 'not-allowed' : 'pointer',
+                            opacity: UNAVAILABLE_SEATS.includes(seatNum) ? 0.6 : 1,
+                            border: UNAVAILABLE_SEATS.includes(seatNum) ? '1px solid #d1d5db' : 'none'
+                          }}
+                        >
+                          {seatNum}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Right Column */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {[2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 37].map((seatNum, idx) => (
+                      <div key={seatNum}>
+                        {seatNum === 5 || seatNum === 8 || seatNum === 20 || seatNum === 23 ? (
+                          <div style={{
+                            backgroundColor: '#2b8a9d',
+                            color: 'white',
+                            padding: '0.75rem',
+                            borderRadius: '8px',
+                            textAlign: 'center',
+                            fontSize: '14px',
+                            fontWeight: '500',
+                            marginBottom: '0.75rem'
+                          }}>
+                            طاولة
+                          </div>
+                        ) : null}
+                        {seatNum === 2 || seatNum === 5 || seatNum === 8 || seatNum === 11 || seatNum === 14 || seatNum === 17 || seatNum === 20 || seatNum === 23 || seatNum === 26 || seatNum === 29 || seatNum === 32 || seatNum === 35 || seatNum === 37 ? (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                            <button
+                              onClick={() => {
+                                if (!UNAVAILABLE_SEATS.includes(seatNum)) {
+                                  setSelectedSeat(seatNum === selectedSeat ? null : seatNum)
+                                }
+                              }}
+                              disabled={UNAVAILABLE_SEATS.includes(seatNum)}
+                              style={{
+                                padding: '0.75rem',
+                                borderRadius: '8px',
+                                backgroundColor: UNAVAILABLE_SEATS.includes(seatNum) 
+                                  ? 'white' 
+                                  : seatNum === selectedSeat 
+                                    ? '#1a5f6f' 
+                                    : '#2b8a9d',
+                                color: UNAVAILABLE_SEATS.includes(seatNum) ? '#9ca3af' : 'white',
+                                fontSize: '16px',
+                                fontWeight: '600',
+                                cursor: UNAVAILABLE_SEATS.includes(seatNum) ? 'not-allowed' : 'pointer',
+                                opacity: UNAVAILABLE_SEATS.includes(seatNum) ? 0.6 : 1,
+                                border: UNAVAILABLE_SEATS.includes(seatNum) ? '1px solid #d1d5db' : 'none'
+                              }}
+                            >
+                              {seatNum}
+                            </button>
+                            {seatNum === 2 ? (
+                              <button
+                                onClick={() => {
+                                  if (!UNAVAILABLE_SEATS.includes(4)) {
+                                    setSelectedSeat(4 === selectedSeat ? null : 4)
+                                  }
+                                }}
+                                disabled={UNAVAILABLE_SEATS.includes(4)}
+                                style={{
+                                  padding: '0.75rem',
+                                  borderRadius: '8px',
+                                  backgroundColor: UNAVAILABLE_SEATS.includes(4) 
+                                    ? 'white' 
+                                    : 4 === selectedSeat 
+                                      ? '#1a5f6f' 
+                                      : '#2b8a9d',
+                                  color: UNAVAILABLE_SEATS.includes(4) ? '#9ca3af' : 'white',
+                                  fontSize: '16px',
+                                  fontWeight: '600',
+                                  cursor: UNAVAILABLE_SEATS.includes(4) ? 'not-allowed' : 'pointer',
+                                  opacity: UNAVAILABLE_SEATS.includes(4) ? 0.6 : 1,
+                                  border: UNAVAILABLE_SEATS.includes(4) ? '1px solid #d1d5db' : 'none'
+                                }}
+                              >
+                                4
+                              </button>
+                            ) : seatNum === 5 ? (
+                              <button
+                                onClick={() => {
+                                  if (!UNAVAILABLE_SEATS.includes(7)) {
+                                    setSelectedSeat(7 === selectedSeat ? null : 7)
+                                  }
+                                }}
+                                disabled={UNAVAILABLE_SEATS.includes(7)}
+                                style={{
+                                  padding: '0.75rem',
+                                  borderRadius: '8px',
+                                  backgroundColor: UNAVAILABLE_SEATS.includes(7) 
+                                    ? 'white' 
+                                    : 7 === selectedSeat 
+                                      ? '#1a5f6f' 
+                                      : '#2b8a9d',
+                                  color: UNAVAILABLE_SEATS.includes(7) ? '#9ca3af' : 'white',
+                                  fontSize: '16px',
+                                  fontWeight: '600',
+                                  cursor: UNAVAILABLE_SEATS.includes(7) ? 'not-allowed' : 'pointer',
+                                  opacity: UNAVAILABLE_SEATS.includes(7) ? 0.6 : 1,
+                                  border: UNAVAILABLE_SEATS.includes(7) ? '1px solid #d1d5db' : 'none'
+                                }}
+                              >
+                                7
+                              </button>
+                            ) : seatNum === 8 ? (
+                              <button
+                                onClick={() => {
+                                  if (!UNAVAILABLE_SEATS.includes(10)) {
+                                    setSelectedSeat(10 === selectedSeat ? null : 10)
+                                  }
+                                }}
+                                disabled={UNAVAILABLE_SEATS.includes(10)}
+                                style={{
+                                  padding: '0.75rem',
+                                  borderRadius: '8px',
+                                  backgroundColor: UNAVAILABLE_SEATS.includes(10) 
+                                    ? 'white' 
+                                    : 10 === selectedSeat 
+                                      ? '#1a5f6f' 
+                                      : '#2b8a9d',
+                                  color: UNAVAILABLE_SEATS.includes(10) ? '#9ca3af' : 'white',
+                                  fontSize: '16px',
+                                  fontWeight: '600',
+                                  cursor: UNAVAILABLE_SEATS.includes(10) ? 'not-allowed' : 'pointer',
+                                  opacity: UNAVAILABLE_SEATS.includes(10) ? 0.6 : 1,
+                                  border: UNAVAILABLE_SEATS.includes(10) ? '1px solid #d1d5db' : 'none'
+                                }}
+                              >
+                                10
+                              </button>
+                            ) : seatNum === 11 ? (
+                              <button
+                                onClick={() => {
+                                  if (!UNAVAILABLE_SEATS.includes(13)) {
+                                    setSelectedSeat(13 === selectedSeat ? null : 13)
+                                  }
+                                }}
+                                disabled={UNAVAILABLE_SEATS.includes(13)}
+                                style={{
+                                  padding: '0.75rem',
+                                  borderRadius: '8px',
+                                  backgroundColor: UNAVAILABLE_SEATS.includes(13) 
+                                    ? 'white' 
+                                    : 13 === selectedSeat 
+                                      ? '#1a5f6f' 
+                                      : '#2b8a9d',
+                                  color: UNAVAILABLE_SEATS.includes(13) ? '#9ca3af' : 'white',
+                                  fontSize: '16px',
+                                  fontWeight: '600',
+                                  cursor: UNAVAILABLE_SEATS.includes(13) ? 'not-allowed' : 'pointer',
+                                  opacity: UNAVAILABLE_SEATS.includes(13) ? 0.6 : 1,
+                                  border: UNAVAILABLE_SEATS.includes(13) ? '1px solid #d1d5db' : 'none'
+                                }}
+                              >
+                                13
+                              </button>
+                            ) : seatNum === 14 ? (
+                              <button
+                                onClick={() => {
+                                  if (!UNAVAILABLE_SEATS.includes(16)) {
+                                    setSelectedSeat(16 === selectedSeat ? null : 16)
+                                  }
+                                }}
+                                disabled={UNAVAILABLE_SEATS.includes(16)}
+                                style={{
+                                  padding: '0.75rem',
+                                  borderRadius: '8px',
+                                  backgroundColor: UNAVAILABLE_SEATS.includes(16) 
+                                    ? 'white' 
+                                    : 16 === selectedSeat 
+                                      ? '#1a5f6f' 
+                                      : '#2b8a9d',
+                                  color: UNAVAILABLE_SEATS.includes(16) ? '#9ca3af' : 'white',
+                                  fontSize: '16px',
+                                  fontWeight: '600',
+                                  cursor: UNAVAILABLE_SEATS.includes(16) ? 'not-allowed' : 'pointer',
+                                  opacity: UNAVAILABLE_SEATS.includes(16) ? 0.6 : 1,
+                                  border: UNAVAILABLE_SEATS.includes(16) ? '1px solid #d1d5db' : 'none'
+                                }}
+                              >
+                                16
+                              </button>
+                            ) : seatNum === 17 ? (
+                              <button
+                                onClick={() => {
+                                  if (!UNAVAILABLE_SEATS.includes(19)) {
+                                    setSelectedSeat(19 === selectedSeat ? null : 19)
+                                  }
+                                }}
+                                disabled={UNAVAILABLE_SEATS.includes(19)}
+                                style={{
+                                  padding: '0.75rem',
+                                  borderRadius: '8px',
+                                  backgroundColor: UNAVAILABLE_SEATS.includes(19) 
+                                    ? 'white' 
+                                    : 19 === selectedSeat 
+                                      ? '#1a5f6f' 
+                                      : '#2b8a9d',
+                                  color: UNAVAILABLE_SEATS.includes(19) ? '#9ca3af' : 'white',
+                                  fontSize: '16px',
+                                  fontWeight: '600',
+                                  cursor: UNAVAILABLE_SEATS.includes(19) ? 'not-allowed' : 'pointer',
+                                  opacity: UNAVAILABLE_SEATS.includes(19) ? 0.6 : 1,
+                                  border: UNAVAILABLE_SEATS.includes(19) ? '1px solid #d1d5db' : 'none'
+                                }}
+                              >
+                                19
+                              </button>
+                            ) : seatNum === 20 ? (
+                              <button
+                                onClick={() => {
+                                  if (!UNAVAILABLE_SEATS.includes(22)) {
+                                    setSelectedSeat(22 === selectedSeat ? null : 22)
+                                  }
+                                }}
+                                disabled={UNAVAILABLE_SEATS.includes(22)}
+                                style={{
+                                  padding: '0.75rem',
+                                  borderRadius: '8px',
+                                  backgroundColor: UNAVAILABLE_SEATS.includes(22) 
+                                    ? 'white' 
+                                    : 22 === selectedSeat 
+                                      ? '#1a5f6f' 
+                                      : '#2b8a9d',
+                                  color: UNAVAILABLE_SEATS.includes(22) ? '#9ca3af' : 'white',
+                                  fontSize: '16px',
+                                  fontWeight: '600',
+                                  cursor: UNAVAILABLE_SEATS.includes(22) ? 'not-allowed' : 'pointer',
+                                  opacity: UNAVAILABLE_SEATS.includes(22) ? 0.6 : 1,
+                                  border: UNAVAILABLE_SEATS.includes(22) ? '1px solid #d1d5db' : 'none'
+                                }}
+                              >
+                                22
+                              </button>
+                            ) : seatNum === 23 ? (
+                              <button
+                                onClick={() => {
+                                  if (!UNAVAILABLE_SEATS.includes(25)) {
+                                    setSelectedSeat(25 === selectedSeat ? null : 25)
+                                  }
+                                }}
+                                disabled={UNAVAILABLE_SEATS.includes(25)}
+                                style={{
+                                  padding: '0.75rem',
+                                  borderRadius: '8px',
+                                  backgroundColor: UNAVAILABLE_SEATS.includes(25) 
+                                    ? 'white' 
+                                    : 25 === selectedSeat 
+                                      ? '#1a5f6f' 
+                                      : '#2b8a9d',
+                                  color: UNAVAILABLE_SEATS.includes(25) ? '#9ca3af' : 'white',
+                                  fontSize: '16px',
+                                  fontWeight: '600',
+                                  cursor: UNAVAILABLE_SEATS.includes(25) ? 'not-allowed' : 'pointer',
+                                  opacity: UNAVAILABLE_SEATS.includes(25) ? 0.6 : 1,
+                                  border: UNAVAILABLE_SEATS.includes(25) ? '1px solid #d1d5db' : 'none'
+                                }}
+                              >
+                                25
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              if (!UNAVAILABLE_SEATS.includes(seatNum)) {
+                                setSelectedSeat(seatNum === selectedSeat ? null : seatNum)
+                              }
+                            }}
+                            disabled={UNAVAILABLE_SEATS.includes(seatNum)}
+                            style={{
+                              width: '100%',
+                              padding: '0.75rem',
+                              borderRadius: '8px',
+                              backgroundColor: UNAVAILABLE_SEATS.includes(seatNum) 
+                                ? 'white' 
+                                : seatNum === selectedSeat 
+                                  ? '#1a5f6f' 
+                                  : '#2b8a9d',
+                              color: UNAVAILABLE_SEATS.includes(seatNum) ? '#9ca3af' : 'white',
+                              fontSize: '16px',
+                              fontWeight: '600',
+                              cursor: UNAVAILABLE_SEATS.includes(seatNum) ? 'not-allowed' : 'pointer',
+                              opacity: UNAVAILABLE_SEATS.includes(seatNum) ? 0.6 : 1,
+                              border: UNAVAILABLE_SEATS.includes(seatNum) ? '1px solid #d1d5db' : 'none'
+                            }}
+                          >
+                            {seatNum}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Amenities */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '0.75rem',
+                maxWidth: '500px',
+                margin: '0 auto 2rem',
+                paddingTop: '1rem',
+                borderTop: '2px solid #2b8a9d'
+              }}>
+                <div style={{
+                  backgroundColor: '#2b8a9d',
+                  color: 'white',
+                  padding: '1rem',
+                  borderRadius: '8px',
+                  textAlign: 'center',
+                  fontSize: '14px',
+                  fontWeight: '500'
+                }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ margin: '0 auto 0.5rem' }}>
+                    <circle cx="12" cy="8" r="3" stroke="white" strokeWidth="2" fill="none"/>
+                    <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" stroke="white" strokeWidth="2" fill="none"/>
+                  </svg>
+                  WC
+                </div>
+                <div style={{
+                  backgroundColor: '#2b8a9d',
+                  color: 'white',
+                  padding: '1rem',
+                  borderRadius: '8px',
+                  textAlign: 'center',
+                  fontSize: '14px',
+                  fontWeight: '500'
+                }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ margin: '0 auto 0.5rem' }}>
+                    <rect x="6" y="7" width="12" height="12" rx="2" stroke="white" strokeWidth="2" fill="none"/>
+                    <rect x="9" y="5" width="6" height="2" rx="1" stroke="white" strokeWidth="2" fill="none"/>
+                  </svg>
+                  أمتعة
+                </div>
+              </div>
+
+              {/* Section A - Bottom Section */}
+              <div>
+                <div style={{
+                  textAlign: 'center',
+                  fontSize: '48px',
+                  fontWeight: 'bold',
+                  color: '#2b8a9d',
+                  marginBottom: '1.5rem'
+                }}>
+                  A
+                </div>
+                
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '2fr 1fr',
+                  gap: '0.75rem',
+                  maxWidth: '500px',
+                  margin: '0 auto'
+                }}>
+                  {/* Left Column - Pairs */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {[29, 32, 35, 38, 41, 44, 47, 50, 53].map((seatNum) => (
+                      <div key={seatNum}>
+                        {seatNum === 35 || seatNum === 41 || seatNum === 47 ? (
+                          <div style={{
+                            backgroundColor: '#2b8a9d',
+                            color: 'white',
+                            padding: '0.75rem',
+                            borderRadius: '8px',
+                            textAlign: 'center',
+                            fontSize: '14px',
+                            fontWeight: '500',
+                            marginBottom: '0.75rem'
+                          }}>
+                            طاولة
+                          </div>
+                        ) : null}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                          <button
+                            onClick={() => {
+                              if (!UNAVAILABLE_SEATS.includes(seatNum)) {
+                                setSelectedSeat(seatNum === selectedSeat ? null : seatNum)
+                              }
+                            }}
+                            disabled={UNAVAILABLE_SEATS.includes(seatNum)}
+                          style={{
+                            padding: '0.75rem',
+                            borderRadius: '8px',
+                            backgroundColor: UNAVAILABLE_SEATS.includes(seatNum)
+                                ? 'white' 
+                                : seatNum === selectedSeat 
+                                  ? '#1a5f6f' 
+                                  : '#2b8a9d',
+                              color: UNAVAILABLE_SEATS.includes(seatNum) ? '#9ca3af' : 'white',
+                              fontSize: '16px',
+                              fontWeight: '600',
+                              cursor: UNAVAILABLE_SEATS.includes(seatNum) ? 'not-allowed' : 'pointer',
+                              opacity: UNAVAILABLE_SEATS.includes(seatNum) ? 0.6 : 1,
+                              border: UNAVAILABLE_SEATS.includes(seatNum) ? '1px solid #d1d5db' : 'none'
+                            }}
+                          >
+                            {seatNum}
+                          </button>
+                          <button
+                            onClick={() => {
+                              const nextSeat = seatNum + 1
+                              if (!UNAVAILABLE_SEATS.includes(nextSeat)) {
+                                setSelectedSeat(nextSeat === selectedSeat ? null : nextSeat)
+                              }
+                            }}
+                            disabled={UNAVAILABLE_SEATS.includes(seatNum + 1)}
+                            style={{
+                              padding: '0.75rem',
+                              borderRadius: '8px',
+                              backgroundColor: UNAVAILABLE_SEATS.includes(seatNum + 1) 
+                                ? 'white' 
+                                : (seatNum + 1) === selectedSeat 
+                                  ? '#1a5f6f' 
+                                  : '#2b8a9d',
+                              color: UNAVAILABLE_SEATS.includes(seatNum + 1) ? '#9ca3af' : 'white',
+                              fontSize: '16px',
+                              fontWeight: '600',
+                              cursor: UNAVAILABLE_SEATS.includes(seatNum + 1) ? 'not-allowed' : 'pointer',
+                              opacity: UNAVAILABLE_SEATS.includes(seatNum + 1) ? 0.6 : 1,
+                              border: UNAVAILABLE_SEATS.includes(seatNum + 1) ? '1px solid #d1d5db' : 'none'
+                            }}
+                          >
+                            {seatNum + 1}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Right Column - Singles */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {[28, 31, 34, 37, 40, 43, 46, 49, 52, 55, 57].map((seatNum) => (
+                      <div key={seatNum}>
+                        {seatNum === 37 || seatNum === 43 || seatNum === 49 ? (
+                          <div style={{
+                            backgroundColor: '#2b8a9d',
+                            color: 'white',
+                            padding: '0.75rem',
+                            borderRadius: '8px',
+                            textAlign: 'center',
+                            fontSize: '14px',
+                            fontWeight: '500',
+                            marginBottom: '0.75rem'
+                          }}>
+                            طاولة
+                          </div>
+                        ) : null}
+                        <button
+                          onClick={() => {
+                            if (!UNAVAILABLE_SEATS.includes(seatNum)) {
+                              setSelectedSeat(seatNum === selectedSeat ? null : seatNum)
+                            }
+                          }}
+                          disabled={UNAVAILABLE_SEATS.includes(seatNum)}
+                          style={{
+                            width: '100%',
+                            padding: '0.75rem',
+                            borderRadius: '8px',
+                            backgroundColor: UNAVAILABLE_SEATS.includes(seatNum) 
+                              ? 'white' 
+                              : seatNum === selectedSeat 
+                                ? '#1a5f6f' 
+                                : '#2b8a9d',
+                            color: UNAVAILABLE_SEATS.includes(seatNum) ? '#9ca3af' : 'white',
+                            fontSize: '16px',
+                            fontWeight: '600',
+                            cursor: UNAVAILABLE_SEATS.includes(seatNum) ? 'not-allowed' : 'pointer',
+                            opacity: UNAVAILABLE_SEATS.includes(seatNum) ? 0.6 : 1,
+                            border: UNAVAILABLE_SEATS.includes(seatNum) ? '1px solid #d1d5db' : 'none'
+                          }}
+                        >
+                          {seatNum}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer with Confirm Button */}
+            <div style={{
+              position: 'sticky',
+              bottom: 0,
+              backgroundColor: 'white',
+              borderTop: '1px solid #e5e7eb',
+              padding: '1.5rem',
+              boxShadow: '0 -4px 12px rgba(0,0,0,0.05)',
+              display: 'flex',
+              flexDirection: 'row-reverse',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: '1rem'
+            }}>
+              {/* Confirm Button */}
+              <button
+                onClick={() => {
+                  if (selectedSeat) {
+                    setExtras(prev => ({ ...prev, seat: true }))
+                    window.localStorage.setItem('selectedSeat', selectedSeat.toString())
+                    handleCloseSeatSidebar()
+                  }
+                }}
+                type="button"
+                disabled={!selectedSeat}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  borderRadius: '6px',
+                  backgroundColor: selectedSeat ? '#2b8a9d' : '#d1d5db',
+                  padding: '10px 14px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  color: 'white',
+                  border: 'none',
+                  cursor: selectedSeat ? 'pointer' : 'not-allowed',
+                  boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+                  transition: 'background-color 0.2s',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+                تأكيد
+              </button>
+
+              {/* Total Display */}
+              <div style={{ textAlign: 'right', flex: 1 }}>
+                <div style={{ 
+                  display: 'flex', 
+                  flexDirection: 'row-reverse',
+                  alignItems: 'baseline',
+                  justifyContent: 'flex-end',
+                  gap: '4px',
+                  marginBottom: '4px'
+                }}>
+                  <span style={{ fontSize: '14px', color: '#666', fontWeight: '400' }}>ر.س</span>
+                  <span style={{ 
+                    fontSize: '36px',
+                    color: '#1a1a1a',
+                    fontWeight: '700',
+                    lineHeight: '1'
+                  }}>
+                    0.00
+                  </span>
+                </div>
+                <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
+                  المبلغ الإجمالي = {selectedSeat ? '1' : '0'} × المقاعد
+                </p>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {showPayment && (
@@ -1962,5 +2855,24 @@ export default function BookingDetailsPage() {
       )}
 
     </div>
+  )
+}
+
+export default function BookingDetailsPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        minHeight: '100vh',
+        fontSize: '18px',
+        color: '#666'
+      }}>
+        جاري التحميل...
+      </div>
+    }>
+      <BookingDetailsContent />
+    </Suspense>
   )
 }

@@ -876,7 +876,34 @@ export default function BookingSection() {
 
     <button
       className="select-trip-btn"
-      onClick={() => router.push('/booking-details')}
+      onClick={() => {
+        if (fromStation && toStation) {
+          const params = new URLSearchParams()
+          params.set('from', fromStation)
+          params.set('to', toStation)
+          params.set('tripType', tripType)
+          
+          if (selectedDate) {
+            params.set('departureDate', formatDate(selectedDate))
+          }
+          
+          if (tripType === 'round-trip' && selectedReturnDate) {
+            params.set('returnDate', formatDate(selectedReturnDate))
+          }
+          
+          params.set('adults', adults.toString())
+          params.set('children', children.toString())
+          params.set('infants', infants.toString())
+          
+          router.push(`/booking-details?${params.toString()}`)
+        }
+      }}
+      disabled={!fromStation || !toStation}
+      style={{
+        opacity: (!fromStation || !toStation) ? 0.5 : 1,
+        cursor: (!fromStation || !toStation) ? 'not-allowed' : 'pointer',
+        pointerEvents: (!fromStation || !toStation) ? 'none' : 'auto'
+      }}
     >
         <span>اختيار الرحلة</span>
         <i className="fas fa-arrow-left"></i>

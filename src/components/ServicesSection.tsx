@@ -1,3 +1,5 @@
+'use client'
+
 import Image from 'next/image'
 
 const services = [
@@ -43,6 +45,7 @@ export default function ServicesSection() {
               alt={service.title}
               width={600}
               height={300}
+              unoptimized
               style={{ width: '100%', height: '300px', objectFit: 'cover' }}
             />
             <div className="service-card-content">
