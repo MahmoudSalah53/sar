@@ -12,7 +12,7 @@ export default function Header() {
       </div>
       <nav>
         <a href="#">عن سار</a>
-        <a href="#">ساهر مع سار</a>
+        <a href="#">سافر مع سار</a>
         <a href="#">شحن</a>
         <a href="#">التطوير العقاري</a>
         <a href="#">اساسيات</a>
