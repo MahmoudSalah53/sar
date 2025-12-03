@@ -663,9 +663,10 @@ function BookingDetailsContent() {
 
               <div style={{ display: 'flex', gap: '0.5rem', flex: 1, justifyContent: 'center', padding: '0 1rem' }}>
                 {dates.map((date, index) => (
-                  <div
+                  <button
                     key={date.id}
                     id={date.id}
+                    type="button"
                     onClick={() => setSelectedDate(index)}
                     style={{
                       padding: '0.875rem 1.5rem',
@@ -685,7 +686,7 @@ function BookingDetailsContent() {
                     <div style={{ fontSize: '13px', opacity: 0.9 }}>
                       {date.day}
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
 
@@ -741,7 +742,8 @@ function BookingDetailsContent() {
                       direction: 'rtl'
                     }}>
                       <div style={{ display: 'flex', gap: '0.625rem' }}>
-                        <div
+                        <button
+                          type="button"
                           id={`trip-${index + 1}-business`}
                           onClick={() => {
                             const isActive = selectedTripId === trip.id && selectedClass === 'business'
@@ -777,9 +779,10 @@ function BookingDetailsContent() {
                             <span style={{ fontSize: '14px', fontWeight: 'normal' }}>.{trip.businessPrice.toFixed(2).split('.')[1]}</span>
                             <span style={{ fontSize: '12px', fontWeight: 'normal', marginRight: '2px' }}>ر.س</span>
                           </div>
-                        </div>
+                        </button>
 
-                        <div
+                        <button
+                          type="button"
                           id={`trip-${index + 1}-economy`}
                           onClick={() => {
                             const isActive = selectedTripId === trip.id && selectedClass === 'economy'
@@ -816,7 +819,7 @@ function BookingDetailsContent() {
                             <span style={{ fontSize: '14px', fontWeight: 'normal' }}>.{trip.economyPrice.toFixed(2).split('.')[1]}</span>
                             <span style={{ fontSize: '12px', fontWeight: 'normal', marginRight: '2px' }}>ر.س</span>
                           </div>
-                        </div>
+                        </button>
                       </div>
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '1.75rem', flex: 1 }}>
@@ -1004,7 +1007,7 @@ function BookingDetailsContent() {
                             </div>
 
                             <button
-                              id={`trip-${index + 1}-economy-saver`}
+                              className="choose"
                               onClick={() => handleSelectPlan(trip, {
                               classKey: 'economy',
                               variantKey: 'saver',
@@ -1141,7 +1144,7 @@ function BookingDetailsContent() {
                             </div>
 
                             <button
-                              id={`trip-${index + 1}-economy-standard`}
+                              className="choose"
                               onClick={() => handleSelectPlan(trip, {
                               classKey: 'economy',
                               variantKey: 'standard',
@@ -1305,7 +1308,7 @@ function BookingDetailsContent() {
                             </div>
 
                             <button
-                              id={`trip-${index + 1}-business-standard`}
+                              className="choose"
                               onClick={() => handleSelectPlan(trip, {
                               classKey: 'business',
                               variantKey: 'standard',
@@ -1442,7 +1445,7 @@ function BookingDetailsContent() {
                             </div>
 
                             <button
-                              id={`trip-${index + 1}-business-premium`}
+                              className="choose"
                               onClick={() => handleSelectPlan(trip, {
                               classKey: 'business',
                               variantKey: 'premium',
